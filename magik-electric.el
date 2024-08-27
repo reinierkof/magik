@@ -86,7 +86,7 @@
      ("message_handler" e 0 ("message_handler.new(" prev_class_name_as_symbol ")\n" dollar))
      ("define_condition" -1 0 ("condition.define_condition(:" ",\n\t:,\n\t{})\n" dollar))
      ("define_binary_operator_case" -1 1 (prev_pragma) ("define_binary_operator_case(:" ",\n\t## \n\t## \n\t## \n\t)\n" dollar))
-
+(t )
      ("if" e 0 "_if " "_then" - "_endif")
      ("over" e 0 "_over " "_loop" - "_endloop")
      ("catch" e 1 "_catch" - "_endcatch")
