@@ -1835,27 +1835,27 @@ Argument ENDING-POINT ..."
           (setq more-slots nil))))
     slots))
 
-(defun magik-file-sonarqube-method-docs ()
-  "Search a file for missing parameters in the methods.
- then complete with sonarQube format"
+(defun magik-file-type-docs ()
+  "Search a file for missing parameters in the methods and slots in exemplar.
+ then complete with Typedocs format format"
   (interactive)
   (save-excursion
     (cond
      ((derived-mode-p 'magik-base-mode)
       (goto-char (point-min))
       (while (search-forward-regexp (cdr (assoc "method-with-arguments" magik-regexp)) nil t)
-	(magik-parse-sonar-method-docs (match-string 1)))
+	(magik-parse-method-type-docs (match-string 1)))
       (goto-char (point-min))
       (while (search-forward-regexp (cdr (assoc "assignment-method" magik-regexp)) nil t)
-	(magik-parse-sonar-method-docs (match-string 1)))
+	(magik-parse-method-type-docs (match-string 1)))
       (goto-char (point-min))
       (while (search-forward-regexp (cdr (assoc "def_slotted_exemplar" magik-regexp)) nil t)
 	(save-excursion
-	  (magik-parse-sonar-slot-docs (match-string 1)))
+	  (magik-parse-exemplar-type-docs ))
 	(forward-line))
       ))))
 
-(defun magik-parse-sonar-slot-docs (exemplar-string)
+(defun magik-parse-exemplar-type-docs ()
   (let ((starting-point (- (line-number-at-pos) 1))
 	(slots (magik-slotted-exemplar-slots (line-number-at-pos)))
 	(slots-in-comments `())
@@ -1883,12 +1883,12 @@ Argument ENDING-POINT ..."
       (when (and (not (equal slot "")) (not (member slot slots-in-comments)))
 	(push slot missing-slots)))
 
-    (magik-write-sonar-slot-docs missing-slots starting-point comments-found )
+    (magik-write-exemplar-type-docs missing-slots starting-point comments-found )
     )
   )
 
-(defun magik-write-sonar-slot-docs (missing-slots starting-point comments-found)
-  "Writer function for inserting sw-method-docs.
+(defun magik-write-exemplar-type-docs (missing-slots starting-point comments-found)
+  "Writer function for inserting exmplar-type-docs.
 Argument MISSING-SLOTS ...
 Argument STARTING-POINT ...
 Argument COMMENTS-FOUND ..."
@@ -1906,7 +1906,7 @@ Argument COMMENTS-FOUND ..."
 	(insert (concat "## @slot {:} " slot "\n")))))
     ))
 
-(defun magik-single-sonarqube-method-docs ()
+(defun magik-single-method-type-docs ()
   "Search last method for missing parameters and complete the comments."
   (interactive)
   (save-excursion
@@ -1916,14 +1916,25 @@ Argument COMMENTS-FOUND ..."
       (search-backward-regexp (cdr (assoc "method-with-arguments" magik-regexp)) nil t)
       (search-forward-regexp (cdr (assoc "method-with-arguments" magik-regexp)) nil t)
       (if (not (equal (match-string 1) nil))
-	  (magik-parse-sonar-method-docs (match-string 1))
+	  (magik-parse-method-type-docs (match-string 1))
 	(search-backward-regexp (cdr (assoc "assignment-method" magik-regexp)) nil t)
 	(search-forward-regexp (cdr (assoc "assignment-method" magik-regexp)) nil t)
 	(unless (equal (match-string 1) nil)
-	  (magik-parse-sonar-method-docs (match-string 1))))))))
+	  (magik-parse-method-type-docs (match-string 1))))))))
 
-(defun magik-parse-sonar-method-docs (method-string)
-  "Helper function for inserting sw-method-docs.
+(defun magik-single-exemplar-type-docs ()
+  "Search closest exemplar for missing parameters and complete the comments."
+  (interactive)
+  (save-excursion
+    (when (derived-mode-p 'magik-base-mode)
+      (if (or (search-backward-regexp (cdr (assoc "def_slotted_exemplar" magik-regexp)) nil t)
+              (search-forward-regexp (cdr (assoc "def_slotted_exemplar" magik-regexp)) nil t))
+          (magik-parse-exemplar-type-docs)
+	(message "No exemplar found in the current buffer."))
+      )))
+
+(defun magik-parse-method-type-docs (method-string)
+  "Helper function for inserting method-type-docs.
 Argument METHOD-STRING ..."
   (let ((parameters (mapcar (lambda (x) (string-trim (replace-regexp-in-string (cdr (assoc "method-argument" magik-regexp)) "" x))) (split-string method-string "(\\|)\\|,")))
 	(parameters-in-comments '())
@@ -1947,17 +1958,17 @@ Argument METHOD-STRING ..."
     (setq starting-point (+ comments-found starting-point))
     (setq parameters-in-comments (delq nil (delete-dups parameters-in-comments)))
     (setq missing-parameters (delq nil (delete-dups missing-parameters)))
-    
+
     (dolist (parameter parameters)
       (when (and (not (equal parameter "")) (not (member parameter parameters-in-comments)))
 	(push parameter missing-parameters)))
     (setq missing-parameters (reverse missing-parameters))
 
-    (magik-write-sonar-method-docs missing-parameters starting-point comments-found write-return (length parameters))
+    (magik-write-method-type-docs missing-parameters starting-point comments-found write-return (length parameters))
     ))
 
-(defun magik-write-sonar-method-docs (missing-parameters starting-point comments-found write-return parameters-count)
-  "Writer function for inserting sw-method-docs.
+(defun magik-write-method-type-docs (missing-parameters starting-point comments-found write-return parameters-count)
+  "Writer function for inserting method type docs
 Argument MISSING-PARAMETERS ...
 Argument STARTING-POINT ...
 Argument COMMENTS-FOUND ..."
