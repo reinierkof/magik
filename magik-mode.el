@@ -1997,6 +1997,23 @@ If matched, return TYPE-OR-CLASS, otherwise nil."
   "List of assignment patterns for Magik variables.
 Each entry is a triple: (TYPE REGEX RETURN-VALUE).")
 
+(defun magik-ac-method-param-type (param-name)
+  "Search for the param-name in a method comment block and return the type."
+  (save-excursion
+    (let (start-loc method-loc)
+      (setq start-loc (point))
+      (setq method-loc (re-search-backward "\\(_method\\)" nil t))
+      ;; If _method is found, proceed to search for the @param and type
+      (if method-loc
+          (progn
+            (goto-char start-loc)
+            ;; Search for the @param with the given param-name
+            (if (re-search-backward
+                 (format "##\\s-*@param\\s-*{\\([^}]+\\)}\\s-*%s" (regexp-quote param-name))
+                 method-loc t)
+                (match-string 1)
+              nil))))))
+
 (defun magik-ac-exemplar-near-point ()
   "Get current exemplar near cursor position."
   (interactive)
@@ -2023,9 +2040,13 @@ Each entry is a triple: (TYPE REGEX RETURN-VALUE).")
                                       for match = (let ((result (magik-ac-check-assignment-and-type variable regex return-value)))
                                                     result)
                                       when match return match))
+			    ;; Check typed params
+			    ((magik-ac-method-param-type variable)
+			     (magik-ac-method-param-type variable))
                             (t
                              nil))))
-        exemplar))))
+	(message "exem: %s" exemplar)
+	exemplar))))
 
 (defun magik-ac-class-method-source ()
   "List of methods on a class.
@@ -2055,9 +2076,9 @@ the list of all possible matches, without recourse to the class browser."
   "Detect if point is at a possible object, allowing for a package: prefix."
   (let (pt)
     (cond
-     ((re-search-backward "\\(\\sw+:\\)\\(\\sw+\\)\\=" nil t)
+     ((re-search-backward "\\(\\sw+:\\)\\(\\sw+\\)\\=" (line-beginning-position) t)
       (match-beginning 2))
-     ((and (re-search-backward "\\Sw\\(\\sw+\\)\\=" nil t)
+     ((and (re-search-backward "\\Sw\\(\\sw+\\)\\=" (line-beginning-position) t)
 	   (not (eq (following-char) ?.))
 	   (setq pt (match-beginning 1))
 	   (not (equal ":" (buffer-substring-no-properties pt (1+ pt)))))
@@ -2065,13 +2086,11 @@ the list of all possible matches, without recourse to the class browser."
      (t nil))))
 
 (defun magik-ac-global-prefix ()
-  "Detect if point is at a possible object, allowing for a package: prefix."
+  "Detect if point is at a possible global."
   (let (pt)
     (cond
-     ((and (re-search-backward "\\Sw\\(\\sw+\\)\\=" nil t)
-           (not (eq (following-char) ?.))
-           (not (equal ":" (buffer-substring-no-properties (match-beginning 1) (1+ (match-beginning 1))))))
-      (setq pt (match-beginning 1))
+     ((and (re-search-backward "^\\s-*\\(\\sw+\\)\\=" (line-beginning-position) t)
+	   (setq pt (match-beginning 1)))
       pt)
      (t nil))))
 
@@ -2099,7 +2118,7 @@ Once initialised this variable is not refreshed."
   "Initialisation function for obtaining all Magik Conditions for use in auto-complete-mode.
 Once initialised this variable is not refreshed."
   (if (magik-cb-ac-start-process)
-      (let ((ac-prefix "<global>."))
+      (let ((ac-prefix ac-prefix))
 	(if magik-ac-global-source-cache
 	    ;; consider enabling refresh using auto-complete's 10 minute refresh idle timer?
 	    magik-ac-global-source-cache
@@ -2231,15 +2250,21 @@ closing bracket into the new \"{...}\" notation."
 (with-eval-after-load 'msb
   (magik-msb-configuration))
 
-;;Auto-complete configuration
+;; Auto-complete configuration
 (defun magik-ac-configuration ()
   "Configure Magik package for auto-complete mode."
-  (ac-define-prefix 'magik-dynamic 'magik-ac-dynamic-prefix)
-  (ac-define-prefix 'magik-condition 'magik-ac-raise-condition-prefix)
-  (ac-define-prefix 'magik-object 'magik-ac-object-prefix)
-  (ac-define-prefix 'magik-method 'magik-ac-method-prefix)
-  (ac-define-prefix 'magik-global 'magik-ac-global-prefix)
-  (setq ac-modes (append (list 'magik-mode) ac-modes)))
+  (unless (assoc 'magik-dynamic ac-prefix-definitions)
+    (ac-define-prefix 'magik-dynamic 'magik-ac-dynamic-prefix))
+  (unless (assoc 'magik-condition ac-prefix-definitions)
+    (ac-define-prefix 'magik-condition 'magik-ac-raise-condition-prefix))
+  (unless (assoc 'magik-object ac-prefix-definitions)
+    (ac-define-prefix 'magik-object 'magik-ac-object-prefix))
+  (unless (assoc 'magik-method ac-prefix-definitions)
+    (ac-define-prefix 'magik-method 'magik-ac-method-prefix))
+  (unless (assoc 'magik-global ac-prefix-definitions)
+    (ac-define-prefix 'magik-global 'magik-ac-global-prefix))
+  (unless (member 'magik-mode ac-modes)
+    (setq ac-modes (append (list 'magik-mode) ac-modes))))
 
 (with-eval-after-load 'auto-complete
   (magik-ac-configuration))
