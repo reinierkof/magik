@@ -688,6 +688,7 @@ Use auto-complete mode \"d\" symbol convention to represent.")
 (defvar magik-ac-global-source
   '((init       . magik-ac-global-source-init)
     (candidates . magik-ac-global-source-cache)
+    (prefix     . magik-ac-global-prefix)
 					;(requires   . 3)
     (symbol     . "g"))
   "Auto-complete mode source definition for listing all Magik Globals.
@@ -1969,28 +1970,62 @@ provide extra control over the name that appears in the index."
       (nconc (delq main-element (delq 'dummy index-alist))
 	     (cdr main-element)))))
 
+(defun magik-ac-check-assignment-and-type (variable regex type-or-class)
+  "Check if VARIABLE matches a REGEX pattern in the buffer.
+If matched, return TYPE-OR-CLASS, otherwise nil."
+  (save-excursion
+    (if (re-search-backward (concat (regexp-quote variable) regex) nil t)
+        (progn
+          (if (functionp type-or-class)
+              (funcall type-or-class) ;; For dynamic class names
+            (if (stringp type-or-class)
+                type-or-class ;; Return the string
+              (progn
+                (message "Warning: type-or-class is not a valid string or function, it's: %s" type-or-class)
+                nil))))
+      nil))) ;; If no match is found, return nil
+
+(defvar magik-ac-assignment-patterns
+  '(("integer"    "\\s-*<<[ \t\n]*\\([-+]?[0-9]+\\)\\(\\s-+\\|$\\)" "integer")
+    ("float"      "\\s-*<<[ \t\n]*\\([-+]?[0-9]*\\.[0-9]+\\)" "float")
+    ("char16_vector" "\\s-*<<[ \t\n]*\\(\"[^\"]*\"\\)" "char16_vector")
+    ("simple_vec" "\\s-*<<[ \t\n]*\\({.*\\)" "simple_vector")
+    ("new-object" "\\s-*^?<<[ \t\n]*\\(\\S-+\\)\\.new"
+     (lambda ()
+       ;; Extract the class name from the matched group
+       (buffer-substring-no-properties (match-beginning 1) (match-end 1)))))
+  "List of assignment patterns for Magik variables.
+Each entry is a triple: (TYPE REGEX RETURN-VALUE).")
+
 (defun magik-ac-exemplar-near-point ()
   "Get current exemplar near cursor position."
+  (interactive)
   (save-excursion
     (save-match-data
       (let ((pt (1- (magik-ac-method-prefix)))
-	    variable
-	    exemplar)
-	(goto-char pt)
-	;; Usefully skip over various syntax types:
-	(if (not (zerop (skip-syntax-backward "w_().")))
-	    (setq variable (buffer-substring-no-properties (point) pt)))
-	(if variable
-	    (setq exemplar (cond ((equal variable "_self")
-				  (or (cadr (magik-current-method-name))
-				      (file-name-sans-extension (buffer-name))))
-				 ((member variable magik-ac-object-source-cache)
-				  variable)
-				 ((re-search-backward (concat (regexp-quote variable) "\\s-*^?<<[ \t\n]*\\(\\S-+\\)\\.new") nil t)
-				  (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
-				 (t
-				  nil))))
-	exemplar))))
+            variable
+            exemplar)
+        (goto-char pt)
+        ;; Usefully skip over various syntax types:
+        (if (not (zerop (skip-syntax-backward "w_().")))
+            (setq variable (buffer-substring-no-properties (point) pt)))
+        (if variable
+            (setq exemplar (cond
+                            ;; Self case
+                            ((equal variable "_self")
+                             (or (cadr (magik-current-method-name))
+                                 (file-name-sans-extension (buffer-name))))
+                            ;; Check object source
+                            ((member variable magik-ac-object-source-cache)
+                             variable)
+                            ;; Check assigned patterns
+                            ((cl-loop for (a_type regex return-value) in magik-ac-assignment-patterns
+                                      for match = (let ((result (magik-ac-check-assignment-and-type variable regex return-value)))
+                                                    result)
+                                      when match return match))
+                            (t
+                             nil))))
+        exemplar))))
 
 (defun magik-ac-class-method-source ()
   "List of methods on a class.
@@ -2026,6 +2061,17 @@ the list of all possible matches, without recourse to the class browser."
 	   (not (eq (following-char) ?.))
 	   (setq pt (match-beginning 1))
 	   (not (equal ":" (buffer-substring-no-properties pt (1+ pt)))))
+      pt)
+     (t nil))))
+
+(defun magik-ac-global-prefix ()
+  "Detect if point is at a possible object, allowing for a package: prefix."
+  (let (pt)
+    (cond
+     ((and (re-search-backward "\\Sw\\(\\sw+\\)\\=" nil t)
+           (not (eq (following-char) ?.))
+           (not (equal ":" (buffer-substring-no-properties (match-beginning 1) (1+ (match-beginning 1))))))
+      (setq pt (match-beginning 1))
       pt)
      (t nil))))
 
@@ -2192,6 +2238,7 @@ closing bracket into the new \"{...}\" notation."
   (ac-define-prefix 'magik-condition 'magik-ac-raise-condition-prefix)
   (ac-define-prefix 'magik-object 'magik-ac-object-prefix)
   (ac-define-prefix 'magik-method 'magik-ac-method-prefix)
+  (ac-define-prefix 'magik-global 'magik-ac-global-prefix)
   (setq ac-modes (append (list 'magik-mode) ac-modes)))
 
 (with-eval-after-load 'auto-complete

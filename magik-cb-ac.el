@@ -50,9 +50,18 @@
 (defun magik-cb-ac-start-process ()
   "Start a Class Browser process for auto-complete-mode.
 Stores process object in `magik-cb-ac-process'."
+  (magik-ac-get-gis-buffer)
+ (setq magik-cb-ac-process (magik-cb-get-process-create "*cb-ac*" 'magik-cb-ac-filter magik-cb-ac-gis-buffer-name nil)))
 
-					; TODO get-gis-buffer
-  (setq magik-cb-ac-process (magik-cb-get-process-create "*cb-ac*" 'magik-cb-ac-filter "*gis*" nil)))
+(defun magik-ac-get-gis-buffer ()
+  "Finds the gis buffer in current buffers if it is active.
+Stores the buffer name in `magik-cb-ac-gis-buffer-name`."
+                                       ; TODO handle multiple gis buffers
+  (cl-loop for buffer in (buffer-list)
+       do (if (string= (subseq (buffer-name buffer) 0 4) "*gis")
+              (setq magik-cb-ac-gis-buffer-name (buffer-name buffer)))
+       )
+ )
 
 (defun magik-cb-ac-candidate-methods ()
   "Return candidate methods matching `ac-prefix' from Method finder output."
