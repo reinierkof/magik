@@ -121,13 +121,13 @@ Use auto-complete mode \"g\" symbol convention to represent a global.")
   "List of assignment patterns for Magik variables.
 Each entry is a triple: (TYPE REGEX RETURN-VALUE).")
 
-(defun my-add-magik-ac-source ()
+(defun magik-ac-add-source ()
   "Ensure magik-ac-source is added to ac-sources in magik-base-mode."
   (when (and (boundp 'ac-sources) (not (member 'magik-ac-source ac-sources)))
-    (add-to-list 'ac-sources 'magik-ac-source)))
+    (add-to-list 'ac-sources 'magik-ac-sources)))
 
 ;; Add the function to the magik-base-mode hook
-(add-hook 'magik-base-mode-hook #'my-add-magik-ac-source)
+(add-hook 'magik-base-mode-hook #'magik-ac-add-source)
 
 ;; Give the already existing source a symbol
 (setq ac-source-words-in-same-mode-buffers
@@ -334,7 +334,7 @@ Once initialised this variable is not refreshed."
       (auto-complete-mode 1)
     (auto-complete-mode 0)))
 
-(add-hook 'magik-base-mode-hook #'magik-ac-maybe-enable)
+(add-hook 'magik-mode-hook #'magik-ac-maybe-enable)
 
 (global-set-key (kbd "<f2> a")     'magik-toggle-ac)
 
