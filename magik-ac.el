@@ -15,11 +15,12 @@
 
 ;;; Commentary:
 
-;; 
+;;
 
 ;;; Code:
 
 (require 'auto-complete)
+(require 'magik-ac-cb)
 
 ;; A U T O - C O M P L E T E
 ;; _________________________
