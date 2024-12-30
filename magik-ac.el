@@ -41,12 +41,16 @@
                           )))
     (append (cl-remove-if (lambda (src)
                             (member src '(ac-source-abbrev
-                                          ac-source-dictionary
-                                          ac-source-words-in-same-mode-buffers))) ;; maybe let this one in ?
+                                          ac-source-dictionary)))
                           (when (and (boundp 'ac-sources) (listp ac-sources))
                             ac-sources))
             default-sources))
   "Auto-complete sources for Magik mode.")
+
+;; Give the already existing source a symbol
+(setq ac-source-words-in-same-mode-buffers
+      (append ac-source-words-in-same-mode-buffers
+              '((symbol . "w"))))
 
 ;; consider enabling refresh using auto-complete's 10 minute refresh idle timer?
 (defvar magik-ac-object-source-cache nil
@@ -133,7 +137,8 @@ If matched, return TYPE-OR-CLASS, otherwise nil."
 Each entry is a triple: (TYPE REGEX RETURN-VALUE).")
 
 (defun magik-ac-method-param-type (param-name)
-  "Search for the param-name in a method comment block and return the type."
+  "Search for the param-name in a method comment block and return the type.
+PARAM-NAME ..."
   (save-excursion
     (let (start-loc method-loc)
       (setq start-loc (point))
@@ -235,7 +240,8 @@ the list of all possible matches, without recourse to the class browser."
       (match-beginning 2)))
 
 (defun magik-ac-raise-condition-source-init ()
-  "Initialisation function for obtaining all Magik Conditions for use in auto-complete-mode.
+ "Initialisation function for obtaining all Magik Conditions.
+for use in auto-complete-mode.
 Once initialised this variable is not refreshed."
   (if (magik-cb-ac-start-process)
       (let ((ac-prefix "<condition>."))
@@ -253,7 +259,7 @@ Once initialised this variable is not refreshed."
   "Initialisation function for obtaining all Magik Conditions for use in auto-complete-mode.
 Once initialised this variable is not refreshed."
   (if (magik-cb-ac-start-process)
-      (let ((ac-prefix ac-prefix))
+      (let ((ac-prefix "<global>."))
 	(if magik-ac-global-source-cache
 	    ;; consider enabling refresh using auto-complete's 10 minute refresh idle timer?
 	    magik-ac-global-source-cache
