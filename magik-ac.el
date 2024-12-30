@@ -21,6 +21,7 @@
 
 (require 'auto-complete)
 (require 'magik-cb-ac)
+(autoload 'magik-current-method-name "magik-mode" "Function from magik-mode.el" t)
 
 ;; A U T O - C O M P L E T E
 ;; _________________________
@@ -47,10 +48,9 @@
             default-sources))
   "Auto-complete sources for Magik mode.")
 
-;; Give the already existing source a symbol
-(setq ac-source-words-in-same-mode-buffers
-      (append ac-source-words-in-same-mode-buffers
-              '((symbol . "w"))))
+(defvar magik-ac-enabled nil
+  "Autocomplete is standard disabled in magik.
+Overwrite in init.el if wanted")
 
 ;; consider enabling refresh using auto-complete's 10 minute refresh idle timer?
 (defvar magik-ac-object-source-cache nil
@@ -109,6 +109,31 @@ Use auto-complete mode \"d\" symbol convention to represent.")
   "Auto-complete mode source definition for listing all Magik Globals.
 Use auto-complete mode \"g\" symbol convention to represent a global.")
 
+(defvar magik-ac-assignment-patterns
+  '(("integer"    "\\s-*<<[ \t\n]*\\([-+]?[0-9]+\\)\\(\\s-+\\|$\\)" "integer")
+    ("float"      "\\s-*<<[ \t\n]*\\([-+]?[0-9]*\\.[0-9]+\\)" "float")
+    ("char16_vector" "\\s-*<<[ \t\n]*\\(\"[^\"]*\"\\)" "char16_vector")
+    ("simple_vec" "\\s-*<<[ \t\n]*\\({.*\\)" "simple_vector")
+    ("new-object" "\\s-*^?<<[ \t\n]*\\(\\S-+\\)\\.new"
+     (lambda ()
+       ;; Extract the class name from the matched group
+       (buffer-substring-no-properties (match-beginning 1) (match-end 1)))))
+  "List of assignment patterns for Magik variables.
+Each entry is a triple: (TYPE REGEX RETURN-VALUE).")
+
+(defun my-add-magik-ac-source ()
+  "Ensure magik-ac-source is added to ac-sources in magik-base-mode."
+  (when (and (boundp 'ac-sources) (not (member 'magik-ac-source ac-sources)))
+    (add-to-list 'ac-sources 'magik-ac-source)))
+
+;; Add the function to the magik-base-mode hook
+(add-hook 'magik-base-mode-hook #'my-add-magik-ac-source)
+
+;; Give the already existing source a symbol
+(setq ac-source-words-in-same-mode-buffers
+      (append ac-source-words-in-same-mode-buffers
+              '((symbol . "w"))))
+
 (defun magik-ac-check-assignment-and-type (variable regex type-or-class)
   "Check if VARIABLE matches a REGEX pattern in the buffer.
 If matched, return TYPE-OR-CLASS, otherwise nil."
@@ -123,18 +148,6 @@ If matched, return TYPE-OR-CLASS, otherwise nil."
                 (message "Warning: type-or-class is not a valid string or function, it's: %s" type-or-class)
                 nil))))
       nil))) ;; If no match is found, return nil
-
-(defvar magik-ac-assignment-patterns
-  '(("integer"    "\\s-*<<[ \t\n]*\\([-+]?[0-9]+\\)\\(\\s-+\\|$\\)" "integer")
-    ("float"      "\\s-*<<[ \t\n]*\\([-+]?[0-9]*\\.[0-9]+\\)" "float")
-    ("char16_vector" "\\s-*<<[ \t\n]*\\(\"[^\"]*\"\\)" "char16_vector")
-    ("simple_vec" "\\s-*<<[ \t\n]*\\({.*\\)" "simple_vector")
-    ("new-object" "\\s-*^?<<[ \t\n]*\\(\\S-+\\)\\.new"
-     (lambda ()
-       ;; Extract the class name from the matched group
-       (buffer-substring-no-properties (match-beginning 1) (match-end 1)))))
-  "List of assignment patterns for Magik variables.
-Each entry is a triple: (TYPE REGEX RETURN-VALUE).")
 
 (defun magik-ac-method-param-type (param-name)
   "Search for the param-name in a method comment block and return the type.
@@ -304,6 +317,26 @@ Once initialised this variable is not refreshed."
 
 (with-eval-after-load 'auto-complete
   (magik-ac-configuration))
+
+(defun magik-toggle-ac ()
+  "Toggle the autocomplete status in magik-base-mode."
+  (interactive)
+  (setq magik-ac-enabled (not magik-ac-enabled))
+  (if magik-ac-enabled
+      (auto-complete-mode 1)
+    (auto-complete-mode 0))
+  (message "Magik autocomplete %s"
+           (if magik-ac-enabled "enabled" "disabled")))
+
+(defun magik-ac-maybe-enable ()
+  "Enable or disable autocomplete in magik-base-mode based on `magik-ac-enabled`."
+  (if magik-ac-enabled
+      (auto-complete-mode 1)
+    (auto-complete-mode 0)))
+
+(add-hook 'magik-base-mode-hook #'magik-ac-maybe-enable)
+
+(global-set-key (kbd "<f2> a")     'magik-toggle-ac)
 
 (provide 'magik-ac)
 ;;; magik-ac.el ends here

@@ -32,7 +32,6 @@
   (require 'magik-pragma)
   )
 
-(require 'magik-ac)
 (require 'compat)
 (require 'imenu)
 (require 'yasnippet)
@@ -102,7 +101,6 @@ concrete implementations."
 	       imenu-generic-expression imenu-generic-expression
 	       imenu-create-index-function 'magik-imenu-create-index-function
 	       imenu-syntax-alist '((?_ . "w"))
-	       ac-sources magik-ac-sources
 	       outline-regexp "\\(^\\(_abstract +\\|\\)\\(_private +\\|\\)\\(_iter +\\|\\)_method.*\\|.*\.\\(def_property\\|add_child\\)\\|.*\.define_\\(shared_variable\\|shared_constant\\|slot_access\\|slot_externally_\\(read\\|writ\\)able\\|property\\|interface\\|method_signature\\).*\\|^\\(\t*#+\>[^>]\\|def_\\(slotted\\|indexed\\)_exemplar\\|def_mixin\\|#% text_encoding\\|_global\\|read_\\(message\\|translator\\)_patch\\).*\\)")
 
   (when magik-auto-abbrevs (abbrev-mode 1))
