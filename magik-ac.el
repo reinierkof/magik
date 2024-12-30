@@ -21,7 +21,6 @@
 
 (require 'auto-complete)
 (require 'magik-cb-ac)
-(autoload 'magik-current-method-name "magik-mode" "Function from magik-mode.el" t)
 
 ;; A U T O - C O M P L E T E
 ;; _________________________
@@ -271,6 +270,7 @@ Once initialised this variable is not refreshed."
 (defun magik-ac-global-source-init ()
   "Initialisation function for obtaining all Magik Conditions for use in auto-complete-mode.
 Once initialised this variable is not refreshed."
+  (message "it is done NOW")
   (if (magik-cb-ac-start-process)
       (let ((ac-prefix "<global>."))
 	(if magik-ac-global-source-cache
