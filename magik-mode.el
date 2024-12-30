@@ -30,9 +30,9 @@
   (require 'magik-indent)
   (require 'magik-electric)
   (require 'magik-pragma)
-  (require 'magik-ac)
   )
 
+(require 'magik-ac)
 (require 'compat)
 (require 'imenu)
 (require 'yasnippet)
