@@ -2030,6 +2030,7 @@ closing bracket into the new \"{...}\" notation."
   (define-key magik-base-mode-map (kbd "<f2> d") 'magik-single-sw-method-docs)
   (define-key magik-base-mode-map (kbd "<f2> P") 'magik-file-pragma)
   (define-key magik-base-mode-map (kbd "<f2> p") 'magik-single-pragma)
+  (define-key magik-base-mode-map (kbd "<f2> a") 'magik-toggle-ac)
 
   (define-key magik-base-mode-map (kbd "<f4> <f4>") 'magik-symbol-complete)
   (define-key magik-base-mode-map (kbd "<f4> c") 'magik-copy-method)
