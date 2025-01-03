@@ -32,7 +32,7 @@
   (require 'magik-pragma)
   )
 
-(require 'magik-ac)
+(require 'magik-comp-any)
 (require 'compat)
 (require 'imenu)
 (require 'yasnippet)
@@ -80,6 +80,9 @@ Users can also swap the point and mark positions using \\[exchange-point-and-mar
   :group 'magik
   :type  'integer)
 
+(defvar magik-mode-enabled nil
+  "Non-nil if Magik Mode is enabled in the current buffer.")
+
 (define-derived-mode magik-base-mode prog-mode "Magik"
   "Generic major mode for editing Magik files.
 
@@ -88,10 +91,12 @@ concrete implementations."
   :interactive nil
   :group 'magik
 
-  (compat-call setq-local magik-template-file-type (magik-template-file-type)
+  (compat-call setq-local
+	       magik-template-file-type (magik-template-file-type)
 	       paragraph-start (concat "^$\\|" page-delimiter)
 	       paragraph-separate paragraph-start
 	       require-final-newline mode-require-final-newline
+	       magik-mode-enabled t
 	       comment-start "#"
 	       comment-end ""
 	       comment-column 8

@@ -20,12 +20,15 @@
 ;;; Code:
 
 (require 'auto-complete)
+(require 'magik-cb)
 
 ;; A U T O - C O M P L E T E
 ;; _________________________
 
 (defun magik-cb-ac-filter (p s)
-  "Process data coming back from the CB auto-complete buffer."
+  "Process data coming back from the CB auto-complete buffer.
+P ...
+S ..."
   (with-current-buffer (process-buffer p)
     (unwind-protect
 	(let ((buffer-read-only nil)
@@ -49,19 +52,29 @@
 
 (defun magik-cb-ac-start-process ()
   "Start a Class Browser process for auto-complete-mode.
-Stores process object in `magik-cb-ac-process'."
-  (magik-ac-get-gis-buffer)
- (setq magik-cb-ac-process (magik-cb-get-process-create "*cb-ac*" 'magik-cb-ac-filter magik-cb-ac-gis-buffer-name nil)))
+Returns t if the process was started or running, nil if there's an error."
+  (if magik-cb-ac-process
+      t
+    (let ((gis-buffer-name (magik-cb-ac-get-gis-buffer)))
+      (if (not gis-buffer-name)
+          nil
+        (setq magik-cb-ac-process
+              (magik-cb-get-process-create
+               "*cb-company*" 'magik-cb-ac-filter gis-buffer-name nil))
+        (if magik-cb-ac-process
+            t
+          nil)))))
 
-(defun magik-ac-get-gis-buffer ()
-  "Finds the gis buffer in current buffers if it is active.
-Stores the buffer name in `magik-cb-ac-gis-buffer-name`."
-                                       ; TODO handle multiple gis buffers
-  (cl-loop for buffer in (buffer-list)
-       do (if (string= (subseq (buffer-name buffer) 0 4) "*gis")
-              (setq magik-cb-ac-gis-buffer-name (buffer-name buffer)))
-       )
- )
+(defun magik-cb-ac-get-gis-buffer ()
+  "Find the gis buffer in current buffers if it is active.
+Stores the buffer name in `magik-cb-ac-gis-buffer-name`
+ or returns nil if no GIS buffer is found."
+  (let ((gis-buffer-name nil))
+    (cl-loop for buffer in (buffer-list)
+             do (if (and (stringp (buffer-name buffer))
+                        (string-prefix-p "*gis" (buffer-name buffer)))
+                    (setq gis-buffer-name (buffer-name buffer))))
+    gis-buffer-name))
 
 (defun magik-cb-ac-candidate-methods ()
   "Return candidate methods matching `ac-prefix' from Method finder output."
@@ -135,7 +148,12 @@ Stores the buffer name in `magik-cb-ac-gis-buffer-name`."
 
 ;;TODO extract out Magik method signature from callsification and documentation processing.
 (defun magik-cb-method-docstring (class candidate args classify documentation)
-  "Return method documentation string."
+  "Return method documentation string.
+CLASS ...
+CANDIDATE ...
+ARGS ...
+CLASSIFY ...
+DOCUMENTATION ..."
   (let* ((required (elt args 0))
 	 (optional (elt args 1))
 	 (gather (elt args 2))
@@ -231,42 +249,40 @@ Stores the buffer name in `magik-cb-ac-gis-buffer-name`."
 		  i (1+ i)))))
       (nreverse candidates))))
 
-(defun magik-cb-ac-method-candidates ()
-  "Return list of methods for a class matching AC-PREFIX for auto-complete mode.
-AC-PREFIX is of the form \"CLASS\".\"METHOD_NAME_PREFIX\""
+(defun magik-cb-ac-method-candidates (prefix)
+  "Return list of methods for a class matching PREFIX for auto-complete mode.
+PREFIX is of the form \"CLASS\".\"METHOD_NAME_PREFIX\""
   (let ((magik-cb--ac-candidates 'unset) ; use 'unset symbol since nil is also a valid return value.
-	(ac-prefix ac-prefix)
-	(ac-limit (or ac-limit 1000000))
-	class method character)
+        (ac-limit (or ac-limit 1000000))
+        class method character)
     (save-match-data
       (cond ((null magik-cb-ac-process)
-	     (setq magik-cb--ac-candidates nil))
-	    ((not (string-match "\\(\\S-+\\)\\.\\(.*\\)" ac-prefix))
-	     (setq magik-cb--ac-candidates nil))
-	    (t
-	     (setq  class (match-string-no-properties 1 ac-prefix)
-		    method (match-string-no-properties 2 ac-prefix)
-		    character (if (equal method "") method (substring method 0 1))
-		    ac-prefix (cons method class))
-	     (process-send-string magik-cb-ac-process
-				  (concat "method_name ^" character "\n"
-					  "unadd class \nadd class " class "\n"
-					  "method_cut_off " (number-to-string ac-limit) "\n"
-					  "override_flags\nshow_classes\nshow_args\nshow_comments\nprint_curr_methods\n"))
-	     (while (and (eq magik-cb--ac-candidates 'unset)
-			 (magik-cb-is-running nil magik-cb-ac-process))
-	       (sleep-for 0.1))
-	     (setq magik-cb--ac-candidates (append (list (concat " " class "." character)) magik-cb--ac-candidates)))))
+             (setq magik-cb--ac-candidates nil))
+            ((not (string-match "\\(\\S-+\\)\\.\\(.*\\)" prefix))
+             (setq magik-cb--ac-candidates nil))
+            (t
+             (setq class (match-string-no-properties 1 prefix)
+                   method (match-string-no-properties 2 prefix)
+                   character (if (equal method "") method (substring method 0 1)))
+             (process-send-string magik-cb-ac-process
+                                  (concat "method_name ^" character "\n"
+                                          "unadd class \nadd class " class "\n"
+                                          "method_cut_off " (number-to-string ac-limit) "\n"
+                                          "override_flags\nshow_classes\nshow_args\nshow_comments\nprint_curr_methods\n"))
+             (while (and (eq magik-cb--ac-candidates 'unset)
+                         (magik-cb-is-running nil magik-cb-ac-process))
+               (sleep-for 0.1)) 
+             (setq magik-cb--ac-candidates (append (list (concat " " class "." character)) magik-cb--ac-candidates)))))
     magik-cb--ac-candidates))
 
-(defun magik-cb-ac-class-candidates ()
-  "Return list of classes matching AC-PREFIX for auto-complete mode."
+(defun magik-cb-ac-class-candidates (prefix)
+  "Return list of classes matching PREFIX for auto-complete mode."
   (let ((magik-cb--ac-candidates 'unset)) ; use 'unset symbol since nil is also a valid return value.
     (cond ((null magik-cb-ac-process)
 	   (setq magik-cb--ac-candidates nil))
 	  (t
 	   (process-send-string magik-cb-ac-process
-				(concat "dont_override_flags\npr_family " ac-prefix "\n"))
+				(concat "dont_override_flags\npr_family " prefix "\n"))
 	   (while (and (eq magik-cb--ac-candidates 'unset)
 		       (magik-cb-is-running nil magik-cb-ac-process))
 	     (sleep-for 0.1))))
