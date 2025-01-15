@@ -271,7 +271,7 @@ PREFIX is of the form \"CLASS\".\"METHOD_NAME_PREFIX\""
                                           "override_flags\nshow_classes\nshow_args\nshow_comments\nprint_curr_methods\n"))
              (while (and (eq magik-cb--ac-candidates 'unset)
                          (magik-cb-is-running nil magik-cb-ac-process))
-               (sleep-for 0.1)) 
+               (sleep-for 0.1))
              (setq magik-cb--ac-candidates (append (list (concat " " class "." character)) magik-cb--ac-candidates)))))
     magik-cb--ac-candidates))
 

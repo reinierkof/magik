@@ -36,6 +36,7 @@
 (defvar magik-company--load-dynamics nil)
 (defvar magik-company--load-globals nil)
 (defvar magik-company--load-objects nil)
+(defvar magik-company--cur-prefix nil)
 
 (defvar magik-company--objects-source-cache-loaded nil
   "Tracks whether the object cache is loaded, for optional reset.")
@@ -69,30 +70,42 @@ COMMAND, ARG, IGNORED"
   (interactive (list 'interactive))
   (cl-case command
     (prefix (magik-company--prefix))
-    (candidates (magik-company--candidates arg)))
+    (candidates (magik-company--candidates))
+    (duplicates nil))
   )
 
 (defun magik-company--prefix ()
-  (if
-      (and magik-mode-enabled
-	   (not (magik-company--in-comment))
-	   (not (magik-company--in-string)))
-    (progn (
-     (setq magik-company--load-methods (magik-company--at-method-prefix))
-     (setq magik-company--load-conditions (magik-company--at-raise-condition-prefix))
-     (setq magik-company--load-dynamics (magik-company--at-dynamic-prefix))
-     (setq magik-company--load-globals (magik-company--at-global-prefix))
-     (setq magik-company--load-objects (magik-company--at-object-prefix))
-     ))
-    (
-     (setq magik-company--load-methods nil)
-     (setq magik-company--load-conditions nil)
-     (setq magik-company--load-dynamics nil)
-     (setq magik-company--load-globals nil)
-     (setq magik-company--load-objects nil)
-    )))
+  (if (and magik-mode-enabled
+           (not (magik-company--in-comment))
+           (not (magik-company--in-string)))
+      (progn
+        (setq magik-company--load-methods (magik-company--at-method-prefix))
+        (setq magik-company--load-conditions (magik-company--at-raise-condition-prefix))
+        (setq magik-company--load-dynamics (magik-company--at-dynamic-prefix))
+        (setq magik-company--load-globals (magik-company--at-global-prefix))
+        (setq magik-company--load-objects (magik-company--at-object-prefix))
 
-(defun magik-company--candidates (callback prefix)
+        (let ((start (line-beginning-position))
+              (end (point))
+              (regex "[^a-zA-Z0-9:_!]+")  ; The regex for non-letters, non-numbers, non-colons, non-underscores.
+              result)
+          (save-excursion
+            (if (re-search-backward regex start t)
+                (setq result (buffer-substring-no-properties (+ 1 (point)) end))
+              (setq result (buffer-substring-no-properties (+ 1 start) end)))
+	    )
+	  (setq magik-company--cur-prefix result)
+          result))
+    (progn
+      (setq magik-company--load-methods nil)
+      (setq magik-company--load-conditions nil)
+      (setq magik-company--load-dynamics nil)
+      (setq magik-company--load-globals nil)
+      (setq magik-company--load-objects nil)
+      nil)))
+
+
+(defun magik-company--candidates ()
   "Generate a list of completion candidates for PREFIX and pass them to CALLBACK."
   (when (not magik-company--objects-source-cache-loaded)
     (magik-company--objects-source-init)
@@ -103,24 +116,26 @@ COMMAND, ARG, IGNORED"
   (when (not magik-company--conditions-source-cache-loaded)
     (magik-company--conditions-source-init)
     )
-  (let ((candidates '()))
+  (let ((magik-candidates '()))
     (when (or magik-company--load-globals
 	      magik-company--load-dynamics)
-      (setq candidates (append candidates magik-company--globals-source-cache)))
+      (setq magik-candidates (append magik-candidates magik-company--globals-source-cache)))
     (when magik-company--load-objects
-      (setq candidates (append candidates magik-company--objects-source-cache)))
+      (setq magik-candidates (append magik-candidates magik-company--objects-source-cache)))
     (when magik-company--load-methods
-      (setq candidates (append candidates (magik-company--method-candidates prefix))))
+      (setq magik-candidates (append magik-candidates (magik-company--method-candidates magik-company--cur-prefix))))
     (when magik-company--load-conditions
-      (setq candidates (append candidates magik-company--conditions-source-cache)))
+      (setq magik-candidates (append magik-candidates magik-company--conditions-source-cache)))
     (when magik-company--load-dynamics
-      (setq candidates (append candidates magik-company--dynamics-source-cache)))
+      (setq magik-candidates (append magik-candidates magik-company--dynamics-source-cache)))
+     (setq magik-candidates
+          (cl-remove-if-not (lambda (candidate)
+                              (string-prefix-p magik-company--cur-prefix candidate))
+                            magik-candidates))
 
-    (let ((filtered-candidates (cl-remove-if-not
-                                (lambda (candidate)
-                                  (string-prefix-p prefix candidate))
-                                candidates)))
-      (funcall callback filtered-candidates))))
+     (setq magik-candidates (delete-dups magik-candidates))
+
+      magik-candidates))
 
 
 (defun magik-company--method-candidates (prefix)
@@ -136,15 +151,14 @@ PREFIX ..."
           (let ((short-prefix (concat exemplar "." (if (> (length prefix) 0) (substring prefix 0 1)))))
             (if (not (and magik-company--class-method-source-cache
                           (equal (concat " " short-prefix) (car magik-company--class-method-source-cache))))
-		;; Reset cache
-		(setq magik-company--class-method-source-cache (magik-cb-ac-method-candidates prefix))
+		(setq magik-company--class-method-source-cache (magik-cb-ac-method-candidates short-prefix))
               ;; Re-use cache , DEBUG CODE REMOVE LATER
               (progn
 		(message "re-using method-source cache")))))
       magik-company--class-method-source-cache))
 )
 
-(defun magik-company---exemplar-near-point ()
+(defun magik-company--exemplar-near-point ()
   "Get current exemplar near cursor position."
   (save-excursion
     (save-match-data
@@ -205,9 +219,8 @@ PARAM-NAME ..."
 (defun magik-company--at-method-prefix ()
   "Detect if point is at . method point."
   (save-excursion
-    (if (re-search-backward "\\(_self\\|_clone\\|\\S-\\)\\.\\(\\sw+\\)\\=" nil t)
-        t
-      nil)))
+    (re-search-backward "\\(_self\\|_clone\\|\\S-\\)\\.\\(\\sw+\\)\\=" (line-beginning-position) t)))
+
 
 
 (defun magik-company--at-raise-condition-prefix ()
