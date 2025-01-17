@@ -25,6 +25,7 @@
 
 ;;(require 'magik-mode)
 (require 'company)
+(require 'magik-cb-ac)
 
 (defgroup company-magik nil
   "Company back-end for Magik code completion."
@@ -55,7 +56,7 @@
   '(("integer"    "\\s-*<<[ \t\n]*\\([-+]?[0-9]+\\)\\(\\s-+\\|$\\)" "integer")
     ("float"      "\\s-*<<[ \t\n]*\\([-+]?[0-9]*\\.[0-9]+\\)" "float")
     ("char16_vector" "\\s-*<<[ \t\n]*\\(\"[^\"]*\"\\)" "char16_vector")
-    ("simple_vec" "\\s-*<<[ \t\n]*\\({.*\\)" "simple_vector")
+    ("simple_vetorc" "\\s-*<<[ \t\n]*\\({.*\\)" "simple_vector")
     ("new-object" "\\s-*^?<<[ \t\n]*\\(\\S-+\\)\\.new"
      (lambda ()
        ;; Extract the class name from the matched group
@@ -71,7 +72,7 @@ COMMAND, ARG, IGNORED"
   (cl-case command
     (prefix (magik-company--prefix))
     (candidates (magik-company--candidates))
-    (duplicates nil))
+    )
   )
 
 (defun magik-company--prefix ()
@@ -92,7 +93,7 @@ COMMAND, ARG, IGNORED"
           (save-excursion
             (if (re-search-backward regex start t)
                 (setq result (buffer-substring-no-properties (+ 1 (point)) end))
-              (setq result (buffer-substring-no-properties (+ 1 start) end)))
+              (setq result (buffer-substring-no-properties start end)))
 	    )
 	  (setq magik-company--cur-prefix result)
           result))
@@ -106,7 +107,7 @@ COMMAND, ARG, IGNORED"
 
 
 (defun magik-company--candidates ()
-  "Generate a list of completion candidates for PREFIX and pass them to CALLBACK."
+  "Generate a list of completion candidates"
   (when (not magik-company--objects-source-cache-loaded)
     (magik-company--objects-source-init)
     )
@@ -128,14 +129,14 @@ COMMAND, ARG, IGNORED"
       (setq magik-candidates (append magik-candidates magik-company--conditions-source-cache)))
     (when magik-company--load-dynamics
       (setq magik-candidates (append magik-candidates magik-company--dynamics-source-cache)))
-     (setq magik-candidates
+
+    (setq magik-candidates
           (cl-remove-if-not (lambda (candidate)
                               (string-prefix-p magik-company--cur-prefix candidate))
                             magik-candidates))
 
-     (setq magik-candidates (delete-dups magik-candidates))
-
-      magik-candidates))
+    (setq magik-candidates (delete-dups magik-candidates))
+    magik-candidates))
 
 
 (defun magik-company--method-candidates (prefix)
@@ -145,16 +146,18 @@ All the methods beginning with the first character are returned and stored in th
 Thus subsequent characters refining the match are handled by auto-complete refining
 the list of all possible matches, without recourse to the class browser.
 PREFIX ..."
-  (let ((exemplar (magik-company--exemplar-near-point)))
+  (let ((exemplar (magik-company--exemplar-near-point))
+	(short-prefix prefix))
     (if exemplar
 	(progn
-          (let ((short-prefix (concat exemplar "." (if (> (length prefix) 0) (substring prefix 0 1)))))
+          (setq short-prefix (concat exemplar "." (if (> (length short-prefix) 0) (substring short-prefix 0 1))))
             (if (not (and magik-company--class-method-source-cache
                           (equal (concat " " short-prefix) (car magik-company--class-method-source-cache))))
-		(setq magik-company--class-method-source-cache (magik-cb-ac-method-candidates short-prefix))
+		(progn
+		(setq magik-company--class-method-source-cache (magik-cb-ac-method-candidates short-prefix)))
               ;; Re-use cache , DEBUG CODE REMOVE LATER
               (progn
-		(message "re-using method-source cache")))))
+		(message "re-using method-source cache"))))
       magik-company--class-method-source-cache))
 )
 
@@ -181,7 +184,7 @@ PREFIX ..."
 		     ((member variable magik-company--objects-source-cache)
 		      variable)
 		     ;; Check assigned patterns
-		     ((cl-loop for (regex return-value) in magik-company--assignment-patterns
+		     ((cl-loop for (return-value regex) in magik-company--assignment-patterns
 			       for match = (let ((result (magik-company--check-assignment-and-type variable regex return-value)))
 					     result)
 			       when match return match))
@@ -247,13 +250,16 @@ PARAM-NAME ..."
       nil)))
 
 (defun magik-company--at-object-prefix ()
-  "Detect if the point is at a possible object, allowing for a package: prefix."
+  "Detect if the point is at a possible object.
+Allows for single words or two words connected with a ':'."
   (save-excursion
-    (if (or (re-search-backward "\\(\\sw+:\\)\\(\\sw+\\)\\=" (line-beginning-position) t)
-            (and (re-search-backward "\\Sw\\(\\sw+\\)\\=" (line-beginning-position) t)
-                 (not (eq (following-char) ?.))
-                 (not (equal ":" (buffer-substring-no-properties (match-beginning 1) (1+ (match-beginning 1)))))))
-        t
+    (if (or
+         (re-search-backward "\\b\\(\\sw+\\):\\(\\sw+\\)\\=" (line-beginning-position) t)
+         (re-search-backward "\\b\\(\\sw+\\)\\=" (line-beginning-position) t))
+        (not (or (eq (following-char) ?.)
+                 (save-excursion
+                   (goto-char (match-beginning 0))
+                   (re-search-backward "\\." (line-beginning-position) t))))
       nil)))
 
 (defun magik-company--objects-source-init (&optional reset)
@@ -301,13 +307,13 @@ If matched, return TYPE-OR-CLASS, otherwise nil."
     (if (re-search-backward (concat (regexp-quote variable) regex) nil t)
         (progn
           (if (functionp type-or-class)
-              (funcall type-or-class) ;; For dynamic class names
+              (funcall type-or-class)
             (if (stringp type-or-class)
-                type-or-class ;; Return the string
+                type-or-class
               (progn
                 (message "Warning: type-or-class is not a valid string or function, it's: %s" type-or-class)
                 nil))))
-      nil))) ;; If no match is found, return nil
+      nil)))
 
 (provide 'magik-comp-any)
 ;;; magik-comp-any.el ends here
