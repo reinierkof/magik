@@ -287,6 +287,8 @@ PREFIX is of the form \"CLASS\".\"METHOD_NAME_PREFIX\""
 				(concat "dont_override_flags\npr_family " prefix "\n"))
 	   (while (and (eq magik-cb--ac-candidates 'unset)
 		       (magik-cb-is-running nil magik-cb-ac-process))
-	     (sleep-for 0.1))))))
+	     (sleep-for 0.1))))
+    magik-cb--ac-candidates))
+
 (provide 'magik-cb-ac)
 ;;; magik-cb-ac.el ends here
