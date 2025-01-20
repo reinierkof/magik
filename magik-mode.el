@@ -32,7 +32,6 @@
   (require 'magik-pragma)
   )
 
-(require 'magik-comp-any)
 (require 'compat)
 (require 'imenu)
 (require 'yasnippet)
