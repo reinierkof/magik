@@ -149,17 +149,18 @@ PREFIX ..."
   (let ((exemplar (magik-company--exemplar-near-point))
 	(short-prefix prefix))
     (if exemplar
-	(progn
+	      (progn
           (setq short-prefix (concat exemplar "." (if (> (length short-prefix) 0) (substring short-prefix 0 1))))
-            (if (not (and magik-company--class-method-source-cache
-                          (equal (concat " " short-prefix) (car magik-company--class-method-source-cache))))
-		(progn
-		(setq magik-company--class-method-source-cache (magik-cb-ac-method-candidates short-prefix)))
-              ;; Re-use cache , DEBUG CODE REMOVE LATER
-              (progn
-		(message "re-using method-source cache"))))
-      magik-company--class-method-source-cache))
-)
+          (if (not (and magik-company--class-method-source-cache
+                        (equal (concat " " short-prefix) (car magik-company--class-method-source-cache))))
+		          (progn
+                (when (magik-cb-ac-start-process)
+		             (setq magik-company--class-method-source-cache (magik-cb-ac-method-candidates short-prefix))))
+                ;; Re-use cache , DEBUG CODE REMOVE LATER
+                (progn
+		              (message "re-using method-source cache"))))
+          magik-company--class-method-source-cache))
+    )
 
 (defun magik-company--exemplar-near-point ()
   "Get current exemplar near cursor position."

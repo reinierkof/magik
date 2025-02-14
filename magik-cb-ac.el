@@ -21,6 +21,7 @@
 
 (require 'auto-complete)
 (require 'magik-cb)
+(require 'magik-session)
 
 ;; A U T O - C O M P L E T E
 ;; _________________________
@@ -60,7 +61,7 @@ Returns t if the process was started or running, nil if there's an error."
           nil
         (setq magik-cb-ac-process
               (magik-cb-get-process-create
-               "*cb-company*" 'magik-cb-ac-filter gis-buffer-name nil))
+               magik-session-cb-ac-buffer 'magik-cb-ac-filter gis-buffer-name nil))
         (if magik-cb-ac-process
             t
           nil)))))
@@ -72,7 +73,8 @@ Stores the buffer name in `magik-cb-ac-gis-buffer-name`
   (let ((gis-buffer-name nil))
     (cl-loop for buffer in (buffer-list)
              do (if (and (stringp (buffer-name buffer))
-                        (string-prefix-p "*gis" (buffer-name buffer)))
+                         (string-prefix-p "*gis" (buffer-name buffer))
+                         (get-buffer-process buffer))
                     (setq gis-buffer-name (buffer-name buffer))))
     gis-buffer-name))
 

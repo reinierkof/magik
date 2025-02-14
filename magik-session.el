@@ -227,6 +227,9 @@ this variable buffer-local by putting the following in your .emacs
 (defvar magik-session-cb-buffer nil
   "The Class browser buffer associated with the GIS process.")
 
+(defconst magik-session-cb-ac-buffer "*cb-company*"
+  "The autocomplete class browser buffer associated with the GIS process.")
+
 (defvar magik-session-no-of-cmds nil
   "No. of commands we have sent to this buffer's gis including the
 null one at the end, but excluding commands that have been spotted as
@@ -665,10 +668,16 @@ Adds `magik-session-current-command' to `magik-session-command-history' if not a
   ;;MF New bit for connecting to the method finder:
   ;;MF We nuke the current cb first and reconnect later.
   (when (and magik-cb-dynamic (get-buffer magik-session-cb-buffer))
-    (let ((magik-cb-process (get-buffer-process magik-session-cb-buffer)))
-      (if magik-cb-process (delete-process magik-cb-process)))
+    (let ((magik-local-cb-process (get-buffer-process magik-session-cb-buffer)))
+      (if magik-local-cb-process (delete-process magik-local-cb-process)))
     (process-send-string magik-session-process "_if method_finder _isnt _unset\n_then\n  method_finder.lazy_start?\n  method_finder.send_socket_to_emacs()\n_endif\n$\n"))
   (sit-for 0.01)
+  (when (get-buffer magik-session-cb-ac-buffer)
+    (let ((magik-local-cb-ac-process (get-buffer-process (get-buffer magik-session-cb-ac-buffer))))
+      (when magik-local-cb-ac-process
+        (delete-process magik-local-cb-ac-process)
+             (setq magik-cb-ac-process nil))))
+
   (run-hooks 'magik-session-start-process-post-hook))
 
 ;; Put up here coz of load order problems.
