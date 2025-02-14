@@ -49,7 +49,6 @@
 (defvar magik-company--objects-source-cache nil)
 (defvar magik-company--globals-source-cache nil)
 (defvar magik-company--conditions-source-cache nil)
-(defvar magik-company--dynamics-source-cache nil)
 (defvar magik-company--class-method-source-cache nil)
 
 (defvar magik-company--assignment-patterns
@@ -73,6 +72,15 @@ COMMAND, ARG, IGNORED"
     (prefix (magik-company--prefix))
     (candidates (magik-company--candidates))
     )
+  )
+
+(defun magik-company--reload-cache ()
+  "Reset the caches such that they will refill upon triggering the prefix."
+  (interactive)
+  (setq magik-company--objects-source-cache-loaded nil
+        magik-company--globals-source-cache-loaded nil
+        magik-company--conditions-source-cache-loaded nil
+        )
   )
 
 (defun magik-company--prefix ()
@@ -127,13 +135,11 @@ COMMAND, ARG, IGNORED"
       (setq magik-candidates (append magik-candidates (magik-company--method-candidates magik-company--cur-prefix))))
     (when magik-company--load-conditions
       (setq magik-candidates (append magik-candidates magik-company--conditions-source-cache)))
-    (when magik-company--load-dynamics
-      (setq magik-candidates (append magik-candidates magik-company--dynamics-source-cache)))
-
     (setq magik-candidates
-          (cl-remove-if-not (lambda (candidate)
-                              (string-prefix-p magik-company--cur-prefix candidate))
-                            magik-candidates))
+          (or (cl-remove-if-not (lambda (candidate)
+                                  (string-prefix-p magik-company--cur-prefix candidate))
+                                magik-candidates)
+              '()))
 
     (setq magik-candidates (delete-dups magik-candidates))
     magik-candidates))
@@ -156,10 +162,9 @@ PREFIX ..."
 		          (progn
                 (when (magik-cb-ac-start-process)
 		             (setq magik-company--class-method-source-cache (magik-cb-ac-method-candidates short-prefix))))
-                ;; Re-use cache , DEBUG CODE REMOVE LATER
                 (progn
-		              (message "re-using method-source cache"))))
-          magik-company--class-method-source-cache))
+		              (message "re-using method-source cache"))))))
+          magik-company--class-method-source-cache
     )
 
 (defun magik-company--exemplar-near-point ()
@@ -288,6 +293,9 @@ If RESET is true, the cache is regenerated."
     (when (or (not magik-company--conditions-source-cache-loaded) reset)
       (let ((prefix "<condition>."))
         (setq magik-company--conditions-source-cache (magik-cb-ac-method-candidates prefix))
+        ;; adds an : infront so the prefix works with the results.
+        (setq magik-company--conditions-source-cache
+              (mapcar (lambda (item) (concat ":" item)) (magik-cb-ac-method-candidates prefix)))
         (setq magik-company--conditions-source-cache-loaded t)))))
 
 (defun magik-company--in-comment ()

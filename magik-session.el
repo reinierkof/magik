@@ -672,6 +672,7 @@ Adds `magik-session-current-command' to `magik-session-command-history' if not a
       (if magik-local-cb-process (delete-process magik-local-cb-process)))
     (process-send-string magik-session-process "_if method_finder _isnt _unset\n_then\n  method_finder.lazy_start?\n  method_finder.send_socket_to_emacs()\n_endif\n$\n"))
   (sit-for 0.01)
+  ;;MF We nuke the ac company buffer aswell.
   (when (get-buffer magik-session-cb-ac-buffer)
     (let ((magik-local-cb-ac-process (get-buffer-process (get-buffer magik-session-cb-ac-buffer))))
       (when magik-local-cb-ac-process
