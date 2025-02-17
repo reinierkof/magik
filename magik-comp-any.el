@@ -51,6 +51,11 @@
 (defvar magik-company--conditions-source-cache nil)
 (defvar magik-company--class-method-source-cache nil)
 
+(defvar magik-company--objects-candidates nil)
+(defvar magik-company--globals-candidates nil)
+(defvar magik-company--conditions-candidates nil)
+(defvar magik-company--class-method-candidates nil)
+
 (defvar magik-company--assignment-patterns
   '(("integer"    "\\s-*<<[ \t\n]*\\([-+]?[0-9]+\\)\\(\\s-+\\|$\\)" "integer")
     ("float"      "\\s-*<<[ \t\n]*\\([-+]?[0-9]*\\.[0-9]+\\)" "float")
@@ -71,6 +76,8 @@ COMMAND, ARG, IGNORED"
   (cl-case command
     (prefix (magik-company--prefix))
     (candidates (magik-company--candidates))
+    (annotation (magik-company--annotation arg))
+    (meta "x")
     )
   )
 
@@ -82,6 +89,17 @@ COMMAND, ARG, IGNORED"
         magik-company--conditions-source-cache-loaded nil
         )
   )
+
+(defun magik-company--annotation (candidate)
+  "Determine which category the CANDIDATE belongs to.
+Returns one of the strings: \"Objects\", \"Globals\", \"Conditions\", or \"Method\".
+Returns nil if the candidate is not found in any category."
+  (cond
+   ((member candidate magik-company--objects-candidates) "   Object")
+   ((member candidate magik-company--globals-candidates) "   Global")
+   ((member candidate magik-company--conditions-candidates) "   Condition")
+   ((member candidate magik-company--class-method-candidates) "   Method")
+   (t nil)))
 
 (defun magik-company--prefix ()
   (if (and magik-mode-enabled
@@ -117,33 +135,42 @@ COMMAND, ARG, IGNORED"
 (defun magik-company--candidates ()
   "Generate a list of completion candidates"
   (when (not magik-company--objects-source-cache-loaded)
-    (magik-company--objects-source-init)
-    )
+    (magik-company--objects-source-init))
+
   (when (not magik-company--globals-source-cache-loaded)
-    (magik-company--globals-source-init)
-    )
+    (magik-company--globals-source-init))
+
   (when (not magik-company--conditions-source-cache-loaded)
-    (magik-company--conditions-source-init)
-    )
+    (magik-company--conditions-source-init))
+
   (let ((magik-candidates '()))
     (when (or magik-company--load-globals
-	      magik-company--load-dynamics)
-      (setq magik-candidates (append magik-candidates magik-company--globals-source-cache)))
+	            magik-company--load-dynamics)
+      (setq magik-company--globals-candidates
+            (magik-company--filter-candidates magik-company--globals-source-cache))
+      (setq magik-candidates (append magik-candidates magik-company--globals-candidates)))
+
     (when magik-company--load-objects
-      (setq magik-candidates (append magik-candidates magik-company--objects-source-cache)))
+      (setq magik-company--objects-candidates (magik-company--filter-candidates magik-company--objects-source-cache))
+      (setq magik-candidates (append magik-candidates magik-company--objects-candidates)))
+
     (when magik-company--load-methods
-      (setq magik-candidates (append magik-candidates (magik-company--method-candidates magik-company--cur-prefix))))
+      (setq magik-company--class-method-candidates (magik-company--filter-candidates (magik-company--method-candidates magik-company--cur-prefix)))
+      (setq magik-candidates (append magik-candidates magik-company--class-method-candidates)))
+
     (when magik-company--load-conditions
-      (setq magik-candidates (append magik-candidates magik-company--conditions-source-cache)))
-    (setq magik-candidates
-          (or (cl-remove-if-not (lambda (candidate)
-                                  (string-prefix-p magik-company--cur-prefix candidate))
-                                magik-candidates)
-              '()))
+      (setq magik-company--conditions-candidates (magik-company--filter-candidates magik-company--conditions-source-cache))
+      (setq magik-candidates (append magik-candidates magik-company--conditions-candidates)))
 
     (setq magik-candidates (delete-dups magik-candidates))
     magik-candidates))
 
+(defun magik-company--filter-candidates (candidates)
+  "Filter CANDIDATES to include only those that start with magik current prefix."
+  (or (cl-remove-if-not (lambda (candidate)
+                          (string-prefix-p magik-company--cur-prefix candidate))
+                        candidates)
+      '()))
 
 (defun magik-company--method-candidates (prefix)
   "List of methods on a class.
