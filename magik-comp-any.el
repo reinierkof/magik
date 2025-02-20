@@ -24,6 +24,7 @@
 ;;; Code:
 
 ;;(require 'magik-mode)
+(require 'yasnippet)
 (require 'company)
 (require 'magik-cb-ac)
 
@@ -56,17 +57,17 @@
 (defvar magik-company--conditions-candidates nil)
 (defvar magik-company--class-method-candidates nil)
 
-(defvar magik-company--assignment-patterns
-  '(("integer"    "\\s-*<<[ \t\n]*\\([-+]?[0-9]+\\)\\(\\s-+\\|$\\)" "integer")
-    ("float"      "\\s-*<<[ \t\n]*\\([-+]?[0-9]*\\.[0-9]+\\)" "float")
-    ("char16_vector" "\\s-*<<[ \t\n]*\\(\"[^\"]*\"\\)" "char16_vector")
-    ("simple_vetorc" "\\s-*<<[ \t\n]*\\({.*\\)" "simple_vector")
-    ("new-object" "\\s-*^?<<[ \t\n]*\\(\\S-+\\)\\.new"
-     (lambda ()
-       ;; Extract the class name from the matched group
-       (buffer-substring-no-properties (match-beginning 1) (match-end 1)))))
+(defvar magik-company--typed-assignment-patterns
+  '(("integer"    "\\s-*<<[ \t\n]*\\([-+]?[0-9]+\\)\\(\\s-+\\|$\\)")
+    ("float"      "\\s-*<<[ \t\n]*\\([-+]?[0-9]*\\.[0-9]+\\)")
+    ("char16_vector" "\\s-*<<[ \t\n]*\\(\"[^\"]*\"\\)")
+    ("simple_vector" "\\s-*<<[ \t\n]*\\({.*\\)"))
   "List of assignment patterns for Magik variables.
-Each entry is a triple: (TYPE REGEX RETURN-VALUE).")
+Each entry is a double: (TYPE REGEX).")
+
+(defvar magik-company--class-assignment-patterns
+  '("\\s-*<<[ \t\n]*\\(\\S-+\\)\\.new")
+  )
 
 ;;;###autoload
 (defun company-magik (command &optional arg &rest ignored)
@@ -77,7 +78,9 @@ COMMAND, ARG, IGNORED"
     (prefix (magik-company--prefix))
     (candidates (magik-company--candidates))
     (annotation (magik-company--annotation arg))
-    (meta "x")
+                                        ;(doc-buffer (get-text-property 0 'document arg))
+    (post-completion (magik-company--post-completion arg))
+    (ignore-case (eq t t))
     )
   )
 
@@ -89,17 +92,33 @@ COMMAND, ARG, IGNORED"
         magik-company--conditions-source-cache-loaded nil
         )
   )
+(defun magik-company--post-completion (candidate)
+  "Insert parameters in snippet for CANDIDATE."
+    (let ((arguments (magik-company--has-arguments candidate)))
+      (if arguments (magik-company--insert-param-yassnippet arguments))))
 
 (defun magik-company--annotation (candidate)
   "Determine which category the CANDIDATE belongs to.
 Returns one of the strings: \"Objects\", \"Globals\", \"Conditions\", or \"Method\".
 Returns nil if the candidate is not found in any category."
+  (let* ((arguments (magik-company--has-arguments candidate))
+        (formatted_args (if arguments
+                           (concat "<" (string-join arguments ", ") ">")
+                          "")))
   (cond
-   ((member candidate magik-company--objects-candidates) "   Object")
-   ((member candidate magik-company--globals-candidates) "   Global")
-   ((member candidate magik-company--conditions-candidates) "   Condition")
-   ((member candidate magik-company--class-method-candidates) "   Method")
-   (t nil)))
+   ((member candidate magik-company--objects-candidates) (concat formatted_args "   Object"))
+   ((member candidate magik-company--globals-candidates) (concat formatted_args "   Global"))
+   ((member candidate magik-company--conditions-candidates) (concat formatted_args "   Condition"))
+   ((member candidate magik-company--class-method-candidates) (concat formatted_args "   Method"))
+   (t nil))))
+
+(defun magik-company--has-arguments (candidate)
+  (interactive)
+  (let* ((doc (get-text-property 0 'document candidate))
+         (excluded '("_gather" "_optional")))
+    (when (and doc (string-match "(\\([^)]*\\))" (car (split-string doc "\n"))))
+      (seq-remove (lambda (x) (member x excluded))
+                  (split-string (match-string 1 doc) "[ ,]+" t)))))
 
 (defun magik-company--prefix ()
   (if (and magik-mode-enabled
@@ -121,8 +140,8 @@ Returns nil if the candidate is not found in any category."
                 (setq result (buffer-substring-no-properties (+ 1 (point)) end))
               (setq result (buffer-substring-no-properties start end)))
 	    )
-	  (setq magik-company--cur-prefix result)
-          result))
+	  (setq magik-company--cur-prefix (downcase result))
+          (downcase result)))
     (progn
       (setq magik-company--load-methods nil)
       (setq magik-company--load-conditions nil)
@@ -216,11 +235,19 @@ PREFIX ..."
 		     ;; Check object source
 		     ((member variable magik-company--objects-source-cache)
 		      variable)
-		     ;; Check assigned patterns
-		     ((cl-loop for (return-value regex) in magik-company--assignment-patterns
-			       for match = (let ((result (magik-company--check-assignment-and-type variable regex return-value)))
+		     ;; Check typed assigned patterns
+		     ((cl-loop for (type regex) in magik-company--typed-assignment-patterns
+			             for match = (let ((result (magik-company--check-assignment-and-type variable regex type)))
 					     result)
-			       when match return match))
+			             when match return match))
+         ;; Check class assigned patterns
+         ((cl-loop for regex in magik-company--class-assignment-patterns
+                   for match = (let ((combined-regex (concat (regexp-quote variable) regex)))
+                                 (save-excursion
+                                   (when (re-search-backward combined-regex nil t)
+                                     (let ((result (match-string 1)))
+                                       result))))
+                   when match return match))
 		     ;; Check typed params (use the stored result)
 		     ((not (null method-param-type))
 		      method-param-type)
@@ -336,20 +363,32 @@ If RESET is true, the cache is regenerated."
   (let ((syntax (syntax-ppss)))
     (nth 3 syntax)))
 
-(defun magik-company--check-assignment-and-type (variable regex type-or-class)
+(defun magik-company--check-assignment-and-type (variable regex type)
   "Check if VARIABLE matches a REGEX pattern in the buffer.
 If matched, return TYPE-OR-CLASS, otherwise nil."
   (save-excursion
     (if (re-search-backward (concat (regexp-quote variable) regex) nil t)
         (progn
-          (if (functionp type-or-class)
-              (funcall type-or-class)
-            (if (stringp type-or-class)
-                type-or-class
+            (if (stringp type)
+                type
               (progn
-                (message "Warning: type-or-class is not a valid string or function, it's: %s" type-or-class)
-                nil))))
+                (message "Warning: type-or-class is not a valid string, it's: %s" type)
+                nil)))
       nil)))
+
+(defun magik-company--insert-param-yassnippet (list)
+  "Insert a param yasnippet from LIST, each param is a tab and ends after the ')'."
+  (interactive)
+  (if (eq (char-before) ?\))
+      (progn
+        (delete-char -1)
+        (yas-expand-snippet
+         (concat (mapconcat (lambda (param) (format "${%s}" param)) list ", ") ")$0")
+         ))
+    (progn
+      (yas-expand-snippet
+         (concat (concat "(" (mapconcat (lambda (param) (format "${%s}" param)) list ", ") ")$0"))
+      ))))
 
 (provide 'magik-comp-any)
 ;;; magik-comp-any.el ends here
