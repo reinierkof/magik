@@ -78,6 +78,7 @@ COMMAND, ARG, IGNORED"
     (prefix (magik-company--prefix))
     (candidates (magik-company--candidates))
     (annotation (magik-company--annotation arg))
+    (kind (magik-company--kind arg))
                                         ;(doc-buffer (get-text-property 0 'document arg))
     (post-completion (magik-company--post-completion arg))
     (ignore-case (eq t t))
@@ -94,23 +95,29 @@ COMMAND, ARG, IGNORED"
   )
 (defun magik-company--post-completion (candidate)
   "Insert parameters in snippet for CANDIDATE."
-    (let ((arguments (magik-company--has-arguments candidate)))
-      (if arguments (magik-company--insert-param-yassnippet arguments))))
+  (let ((snippet (magik-company--candidate-is-yasnippet candidate)))
+    (if snippet
+        (progn
+          (delete-region (- (point) (length candidate)) (point))
+          (yas-expand-snippet snippet))
+      (progn
+        (let ((arguments (magik-company--has-arguments candidate)))
+          (if arguments (magik-company--insert-param-yassnippet arguments)))))))
 
 (defun magik-company--annotation (candidate)
-  "Determine which category the CANDIDATE belongs to.
-Returns one of the strings: \"Objects\", \"Globals\", \"Conditions\", or \"Method\".
-Returns nil if the candidate is not found in any category."
   (let* ((arguments (magik-company--has-arguments candidate))
         (formatted_args (if arguments
                            (concat "<" (string-join arguments ", ") ">")
                           "")))
+    formatted_args))
+
+(defun magik-company--kind (candidate)
   (cond
-   ((member candidate magik-company--objects-candidates) (concat formatted_args "   Object"))
-   ((member candidate magik-company--globals-candidates) (concat formatted_args "   Global"))
-   ((member candidate magik-company--conditions-candidates) (concat formatted_args "   Condition"))
-   ((member candidate magik-company--class-method-candidates) (concat formatted_args "   Method"))
-   (t nil))))
+   ((member candidate magik-company--objects-candidates)  'variable)
+   ((member candidate magik-company--globals-candidates) (if (string-prefix-p "!" candidate) 'event 'field))
+   ((member candidate magik-company--conditions-candidates)  'property)
+   ((member candidate magik-company--class-method-candidates) 'method)
+   (t nil)))
 
 (defun magik-company--has-arguments (candidate)
   (interactive)
@@ -133,7 +140,7 @@ Returns nil if the candidate is not found in any category."
 
         (let ((start (line-beginning-position))
               (end (point))
-              (regex "[^a-zA-Z0-9:_!]+")  ; The regex for non-letters, non-numbers, non-colons, non-underscores.
+              (regex "[^a-zA-Z0-9:_!<^]+")
               result)
           (save-excursion
             (if (re-search-backward regex start t)
@@ -207,9 +214,7 @@ PREFIX ..."
                         (equal (concat " " short-prefix) (car magik-company--class-method-source-cache))))
 		          (progn
                 (when (magik-cb-ac-start-process)
-		             (setq magik-company--class-method-source-cache (magik-cb-ac-method-candidates short-prefix))))
-                (progn
-		              (message "re-using method-source cache"))))))
+		             (setq magik-company--class-method-source-cache (magik-cb-ac-method-candidates short-prefix))))))))
           magik-company--class-method-source-cache
     )
 
@@ -390,5 +395,14 @@ If matched, return TYPE-OR-CLASS, otherwise nil."
          (concat (concat "(" (mapconcat (lambda (param) (format "${%s}" param)) list ", ") ")$0"))
       ))))
 
-(provide 'magik-comp-any)
+(defun magik-company--candidate-is-yasnippet (key)
+  "Get the snippet called KEY in MODE's tables."
+  (interactive)
+  (let ((yas-choose-tables-first nil)
+        (yas-choose-keys-first nil))
+    (cl-find key (yas--all-templates
+                  (yas--get-snippet-tables major-mode))
+             :key #'yas--template-key :test #'string=))
+  )
+  (provide 'magik-comp-any)
 ;;; magik-comp-any.el ends here
