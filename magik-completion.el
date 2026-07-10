@@ -266,9 +266,6 @@ Returns nil if point is inside a comment or string."
       (let ((end (point))
             (beg (save-excursion
                    (skip-chars-backward "a-zA-Z0-9_!?:")
-                   ;; include leading underscore for keywords
-                   (when (eq (char-before) ?_)
-                     (backward-char))
                    (point))))
         (when (< beg end)
           (cons beg end))))))
