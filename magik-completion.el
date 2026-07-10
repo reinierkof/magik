@@ -140,15 +140,12 @@ Returns a list of variable name strings visible at point."
 (defun magik-completion--ts-collect-params (scope-node variables)
   "Collect parameter names from SCOPE-NODE into VARIABLES list.
 Returns the updated VARIABLES list."
-  (let ((params (treesit-node-children scope-node)))
-    (dolist (child params)
-      (when (equal (treesit-node-type child) "parameters")
-        (dolist (param (treesit-node-children child))
-          (when (member (treesit-node-type param) '("identifier" "parameter"))
-            (let ((name (treesit-node-text param t)))
-              (unless (or (string-prefix-p "_" name)
-                          (member name variables))
-                (push name variables))))))))
+  (dolist (child (treesit-node-children scope-node))
+    (when (equal (treesit-node-type child) "argument")
+      (let ((name (treesit-node-text child t)))
+        (unless (or (string-prefix-p "_" name)
+                    (member name variables))
+          (push name variables)))))
   variables)
 
 (defun magik-completion--ts-collect-locals (scope-node variables)
@@ -165,14 +162,14 @@ Returns the updated VARIABLES list."
       (cond
        ;; Assignment: var << expr
        ((equal type "assignment")
-        (when-let* ((target (treesit-node-child-by-field-name node "variable"))
+        (when-let* ((target (treesit-node-child node 0))
                     (_ (< (treesit-node-start target) limit)))
           (let ((name (treesit-node-text target t)))
             (unless (or (string-prefix-p "_" name)
                         (member name variables))
               (push name variables)))))
        ;; Local variable declaration
-       ((equal type "variable_declaration")
+       ((equal type "local")
         (dolist (child (treesit-node-children node))
           (when (and (equal (treesit-node-type child) "identifier")
                      (< (treesit-node-start child) limit))
