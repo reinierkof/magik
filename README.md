@@ -29,7 +29,66 @@ The alternative, and recommended, way of installing [magik-mode](https://github.
 
 ### Automatic completion support
 
-Automatic completion support is no longer provided by this package. Please refer to the [magik-company](https://github.com/reinierkof/magik-company) package for this functionality.
+`magik-completion` (in the `magik-completion/` directory) provides a
+`completion-at-point-function` for `magik-ts-mode` and `magik-session-mode`
+buffers, combining tree-sitter analysis of the current buffer with live
+introspection of a running Smallworld GIS session. It requires Emacs 29.1
+or higher (for tree-sitter) and `yasnippet`; on older Emacs, or a build
+without tree-sitter support, it is skipped and the rest of `magik-mode`
+works as normal, just without completion.
+
+`magik-completion-mode` registers a `completion-at-point` function, so it
+works with any completion-at-point front end (the default in-buffer
+completion UI, [Corfu](https://github.com/minad/corfu), or company-mode via
+its own built-in `company-capf` backend). It has no dependency on `company`.
+
+It is off by default. Enable it per-buffer with `(magik-completion-mode 1)`
+or `:hook (magik-ts-mode . magik-completion-mode) (magik-session-mode .
+magik-completion-mode)`, or set `magik-completion-auto-enable` to `t` to have
+`magik-ts-mode` and `magik-session-mode` enable it automatically:
+
+```emacs-lisp
+(setq magik-completion-auto-enable t)
+```
+
+Method candidates that have documentation show it via the
+`:company-doc-buffer` completion property — `company-quickhelp` or Corfu's
+`corfu-popupinfo-mode` will display it automatically.
+
+It completes methods, variables, globals, conditions, slots, exemplars, and
+yasnippets. Any code sent to the session (`f2-b`/`f2-RET`) refreshes the
+session-derived caches automatically; `magik-completion-invalidate-cache`
+refreshes them manually. Accepting a method candidate inserts its parameter
+list as a yasnippet, configurable with:
+
+```emacs-lisp
+(setq magik-completion-insert-params nil/t)
+(setq magik-completion-insert-optional-params nil/t)
+(setq magik-completion-insert-gather-param nil/t)
+```
+
+Method candidate annotations (iterator marker, required/optional/gather
+parameters) can be configured with:
+
+```emacs-lisp
+(setq magik-completion-show-params-annotation nil/t)
+(setq magik-completion-show-optional-params-annotation nil/t)
+(setq magik-completion-show-gather-param-annotation nil/t)
+```
+
+`magik-completion-blacklisted-candidates` excludes specific candidate
+strings. Each candidate's kind (`method`, `exemplar`, `slot`, `variable`,
+`parameter`, `global`, `condition`, `dynamic`, `assign-method`, `snippet`) is
+exposed via the `:company-kind` completion property for icon rendering
+(e.g. with Corfu's [kind-icon](https://github.com/jdtsmith/kind-icon)
+package); no icons are registered out of the box.
+
+Limitations: it is bound to one arbitrary GIS session (`*gis*`-prefixed
+buffer) — there is no way to target a specific session when several are
+running; and since Magik is soft typed, exemplar type inference is
+heuristic and can't always determine the current type. See
+[`magik-completion/docs/architecture.md`](magik-completion/docs/architecture.md)
+for the full design.
 
 ### Global keys
 

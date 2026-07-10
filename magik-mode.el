@@ -37,7 +37,9 @@
 (require 'yasnippet)
 (require 'magik-doc-gen)
 (require 'magik-template)
-(require 'magik-completion)
+
+(when (and (fboundp 'treesit-available-p) (treesit-available-p))
+  (require 'magik-completion))
 
 (defgroup magik nil
   "Customise Magik Language group."
@@ -112,7 +114,9 @@ concrete implementations."
     (abbrev-mode t)
     (yas-minor-mode t))
 
-  (magik-completion-setup)
+  (when (and (bound-and-true-p magik-completion-auto-enable)
+             (fboundp 'magik-completion-setup))
+    (magik-completion-setup))
   (imenu-add-menubar-index))
 
 ;;;###autoload
