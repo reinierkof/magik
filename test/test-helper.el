@@ -17,7 +17,6 @@
   "Absolute path to the magik-mode source root.")
 
 (add-to-list 'load-path magik-mode-test--root)
-(add-to-list 'load-path (expand-file-name "magik-completion" magik-mode-test--root))
 
 (require 'compat)
 

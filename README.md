@@ -29,7 +29,7 @@ The alternative, and recommended, way of installing [magik-mode](https://github.
 
 ### Automatic completion support
 
-`magik-completion` (in the `magik-completion/` directory) provides a
+`magik-completion` (`magik-completion.el`) provides a
 `completion-at-point-function` for `magik-ts-mode` and `magik-session-mode`
 buffers, combining tree-sitter analysis of the current buffer with live
 introspection of a running Smallworld GIS session. It requires Emacs 29.1

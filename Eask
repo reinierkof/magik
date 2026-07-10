@@ -7,10 +7,10 @@
 (website-url "https://github.com/roadrunner1776/magik")
 (keywords "languages")
 
-(load-paths "./" "./magik-completion/")
+(load-paths "./")
 
 (package-file "magik-mode.el")
-(files "*.el" "magik-completion/*.el" "snippets")
+(files "*.el" "snippets")
 
 (script "test" "eask test ert test/test-helper.el ./test/*-test.el")
 
@@ -22,13 +22,13 @@
 (depends-on "flycheck")
 (depends-on "yasnippet")
 
-;; do not try to compile magik-ts-mode.el / magik-completion (both need
+;; do not try to compile magik-ts-mode.el / magik-completion.el (both need
 ;; tree-sitter) if we are below 29.1
 (when (version< emacs-version "29.1")
   (add-hook 'eask-before-compile-hook
     (lambda ()
       (delete-file "magik-ts-mode.el")
-      (delete-directory "magik-completion" t)
+      (delete-file "magik-completion.el")
       (eask-info "(Removed magik-ts-mode and magik-completion, since they would not compile in Emacs below 29.1)"))))
 
 (setq network-security-level 'low)  ; see https://github.com/jcs090218/setup-emacs-windows/issues/156#issuecomment-932956432

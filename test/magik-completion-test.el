@@ -1,4 +1,4 @@
-;;; magik-completion-test.el --- Tests for magik-completion/  -*- lexical-binding: t; -*-
+;;; magik-completion-test.el --- Tests for magik-completion.el  -*- lexical-binding: t; -*-
 
 ;;; Commentary:
 
@@ -21,11 +21,6 @@
 (require 'magik-mode)
 (require 'magik-cb)
 (require 'magik-session)
-(require 'magik-completion-annotation)
-(require 'magik-completion-yasnippet-handling)
-(require 'magik-completion-prefixes)
-(require 'magik-completion-cb)
-(require 'magik-completion-cb-cache)
 (require 'magik-completion)
 
 (defmacro magik-completion-test--with-magik-buffer (text &rest body)
