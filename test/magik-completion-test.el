@@ -393,6 +393,81 @@ $
     (let ((capf (magik-completion-at-point-symbol)))
       (should (try-completion "sw:rop" (nth 2 capf) nil)))))
 
+;;; Method bounds detection
+
+(ert-deftest magik-completion--method-bounds--bare-dot-offers-empty-prefix ()
+  "A bare `.' after a receiver offers the full method list immediately."
+  (with-temp-buffer
+    (magik-mode)
+    (insert "pseudo_area.")
+    (should (equal (magik-completion--method-bounds) (cons (point) (point))))))
+
+(ert-deftest magik-completion--method-bounds--narrows-to-typed-prefix ()
+  "Typing \"pseudo_area.n\" still bounds just the \"n\" prefix."
+  (with-temp-buffer
+    (magik-mode)
+    (insert "pseudo_area.n")
+    (should (equal (magik-completion--method-bounds) (cons (1- (point)) (point))))))
+
+(ert-deftest magik-completion--method-bounds--no-receiver-offers-nothing ()
+  "A `.' with no word/symbol character before it is not method access."
+  (with-temp-buffer
+    (magik-mode)
+    (insert "(")
+    (insert ".")
+    (should-not (magik-completion--method-bounds))))
+
+(ert-deftest magik-completion--method-bounds--bare-decimal-point-offers-nothing ()
+  "A bare `.' after an integer literal is a decimal point, not a method call."
+  (with-temp-buffer
+    (magik-mode)
+    (insert "3.")
+    (should-not (magik-completion--method-bounds))))
+
+(ert-deftest magik-completion--method-bounds--float-literal-offers-nothing ()
+  "Typing digits after a numeric decimal point still offers nothing."
+  (with-temp-buffer
+    (magik-mode)
+    (insert "3.14")
+    (should-not (magik-completion--method-bounds))))
+
+(ert-deftest magik-completion--method-bounds--identifier-ending-in-digit-is-not-numeric ()
+  "An identifier that merely ends in a digit is a normal receiver."
+  (with-temp-buffer
+    (magik-mode)
+    (insert "object3.")
+    (should (equal (magik-completion--method-bounds) (cons (point) (point))))))
+
+(ert-deftest magik-completion--method-bounds--self-with-empty-prefix ()
+  "`_self.' offers the full method list immediately."
+  (with-temp-buffer
+    (magik-mode)
+    (insert "_self.")
+    (should (equal (magik-completion--method-bounds) (cons (point) (point))))))
+
+(ert-deftest magik-completion--numeric-token-p--all-digits ()
+  (with-temp-buffer
+    (insert "42")
+    (should (magik-completion--numeric-token-p (point)))))
+
+(ert-deftest magik-completion--numeric-token-p--alphanumeric-is-not-numeric ()
+  (with-temp-buffer
+    (insert "object3")
+    (should-not (magik-completion--numeric-token-p (point)))))
+
+(ert-deftest magik-completion-at-point-methods--bare-dot-sets-company-prefix-length ()
+  "Marks the result as satisfying any frontend minimum-prefix-length."
+  (with-temp-buffer
+    (magik-mode)
+    (insert "pseudo_area.")
+    (cl-letf (((symbol-function 'magik-completion--query-methods)
+               (lambda (_class _prefix) '("new" "reset"))))
+      (let ((capf (magik-completion-at-point-methods)))
+        (should capf)
+        (should (equal (list (nth 0 capf) (nth 1 capf)) (list (point) (point))))
+        (should (equal (nth 2 capf) '("new" "reset")))
+        (should (eq (plist-get (nthcdr 3 capf) :company-prefix-length) t))))))
+
 ;;; Character-literal completion
 
 (ert-deftest magik-completion-at-point-character--bare-percent-offers-full-list ()
@@ -406,6 +481,14 @@ $
       (should (member "nul" (nth 2 capf)))
       (should (member "newline" (nth 2 capf)))
       (should (member "nbs" (nth 2 capf))))))
+
+(ert-deftest magik-completion-at-point-character--bare-percent-sets-company-prefix-length ()
+  "Marks the result as satisfying any frontend minimum-prefix-length."
+  (with-temp-buffer
+    (magik-mode)
+    (insert "%")
+    (let ((capf (magik-completion-at-point-character)))
+      (should (eq (plist-get (nthcdr 3 capf) :company-prefix-length) t)))))
 
 (ert-deftest magik-completion-at-point-character--narrows-to-matching-name ()
   "Typing \"%new\" narrows to \"newline\"."
@@ -845,6 +928,253 @@ invalidate-cache\" symptom this is a regression test for."
       (should (magik-completion-test--wait-until
                (lambda () (not (eq result 'never-called))) proc))
       (should (equal result "PING")))))
+
+(ert-deftest magik-completion--cb-query-async--retries-until-cb-connection-available ()
+  "Retries instead of dropping the query when the CB process isn't ready yet."
+  (let ((magik-completion--cb-connect-retry-interval 0.05)
+        (attempts 0))
+    (magik-completion-test--with-fake-cb proc
+      (cl-letf (((symbol-function 'magik-completion--ensure-cb-process)
+                 (lambda ()
+                   (cl-incf attempts)
+                   (and (>= attempts 3) proc))))
+        (let ((requester (generate-new-buffer " *test-requester*"))
+              (result 'never-called))
+          (with-current-buffer requester
+            (should (magik-completion--cb-query-async
+                     "PING\n" (lambda (r) (setq result r))
+                     (lambda (str) (string-match-p "\n" str)) #'string-trim)))
+          (should (magik-completion-test--wait-until
+                   (lambda () (not (eq result 'never-called))) proc))
+          (should (equal result "PING"))
+          (should (>= attempts 3))
+          (kill-buffer requester))))))
+
+(ert-deftest magik-completion--cb-query-async--gives-up-after-deadline-with-no-connection ()
+  "Retries stop once `magik-completion-cb-timeout' elapses."
+  (let ((magik-completion--cb-connect-retry-interval 0.02)
+        (magik-completion-cb-timeout 0.1)
+        (attempts 0))
+    (cl-letf (((symbol-function 'magik-completion--ensure-cb-process)
+               (lambda () (cl-incf attempts) nil)))
+      (let ((requester (generate-new-buffer " *test-requester*")))
+        (with-current-buffer requester
+          (should (magik-completion--cb-query-async
+                   "PING\n" #'ignore
+                   (lambda (str) (string-match-p "\n" str)) #'string-trim)))
+        ;; Small steps: a single large `sit-for' can miss a timer that
+        ;; reschedules itself from another timer's callback.
+        (dotimes (_ 30) (sit-for 0.02))
+        (let ((attempts-at-stop attempts))
+          (dotimes (_ 15) (sit-for 0.02))
+          (should (= attempts attempts-at-stop)))
+        (kill-buffer requester)))))
+
+(ert-deftest magik-completion--cb-query-async--refreshes-when-point-unchanged ()
+  "Starts completion on reply even with no prior session, if point is unchanged."
+  (magik-completion-test--with-fake-cb proc
+    (let ((requester (generate-new-buffer " *test-requester*"))
+          (result 'never-called)
+          (called 0))
+      (with-current-buffer requester
+        (insert "abc")
+        (cl-letf (((symbol-function 'completion-at-point)
+                   (lambda () (cl-incf called))))
+          (should (magik-completion--cb-query-async
+                   "PING\n" (lambda (r) (setq result r))
+                   (lambda (str) (string-match-p "\n" str)) #'string-trim))
+          (should (magik-completion-test--wait-until
+                   (lambda () (not (eq result 'never-called))) proc))
+          (should (= called 1))))
+      (kill-buffer requester))))
+
+(ert-deftest magik-completion--cb-query-async--skips-completion-when-point-moved ()
+  "No forced completion if point moved away before the reply arrived."
+  (magik-completion-test--with-fake-cb proc
+    (let ((requester (generate-new-buffer " *test-requester*"))
+          (result 'never-called)
+          (called 0))
+      (with-current-buffer requester
+        (insert "abc")
+        (cl-letf (((symbol-function 'completion-at-point)
+                   (lambda () (cl-incf called))))
+          (should (magik-completion--cb-query-async
+                   "PING\n" (lambda (r) (setq result r))
+                   (lambda (str) (string-match-p "\n" str)) #'string-trim))
+          (goto-char (point-min))
+          (should (magik-completion-test--wait-until
+                   (lambda () (not (eq result 'never-called))) proc))
+          (should (= called 0))))
+      (kill-buffer requester))))
+
+(ert-deftest magik-completion--cb-query-async--refreshes-active-session-regardless-of-point ()
+  "An already-open completion session still refreshes, even if point moved."
+  (magik-completion-test--with-fake-cb proc
+    (let ((requester (generate-new-buffer " *test-requester*"))
+          (result 'never-called)
+          (called 0))
+      (with-current-buffer requester
+        (insert "abc")
+        (let ((completion-in-region-mode t))
+          (cl-letf (((symbol-function 'completion-at-point)
+                     (lambda () (cl-incf called))))
+            (should (magik-completion--cb-query-async
+                     "PING\n" (lambda (r) (setq result r))
+                     (lambda (str) (string-match-p "\n" str)) #'string-trim))
+            (goto-char (point-min))
+            (should (magik-completion-test--wait-until
+                     (lambda () (not (eq result 'never-called))) proc))
+            (should (= called 1)))))
+      (kill-buffer requester))))
+
+(ert-deftest magik-completion--cb-query-async--nudges-corfu-popup-after-refresh ()
+  "Corfu is nudged to redraw since `post-command-hook' never fires from a timer."
+  (unless (boundp 'corfu-mode) (defvar corfu-mode nil))
+  (unless (fboundp 'corfu--post-command) (defalias 'corfu--post-command #'ignore))
+  (magik-completion-test--with-fake-cb proc
+    (let ((requester (generate-new-buffer " *test-requester*"))
+          (result 'never-called)
+          (nudged 0))
+      (with-current-buffer requester
+        (insert "abc")
+        (setq-local corfu-mode t)
+        (cl-letf (((symbol-function 'completion-at-point)
+                   (lambda () (setq-local completion-in-region-mode t)))
+                  ((symbol-function 'corfu--post-command)
+                   (lambda () (cl-incf nudged))))
+          (should (magik-completion--cb-query-async
+                   "PING\n" (lambda (r) (setq result r))
+                   (lambda (str) (string-match-p "\n" str)) #'string-trim))
+          (should (magik-completion-test--wait-until
+                   (lambda () (not (eq result 'never-called))) proc))
+          (should (= nudged 1))))
+      (kill-buffer requester))))
+
+(ert-deftest magik-completion--cb-query-async--company-uses-manual-begin-not-capf ()
+  "Company refresh uses `company-manual-begin', not `completion-at-point'."
+  (unless (boundp 'company-mode) (defvar company-mode nil))
+  (unless (boundp 'company-candidates) (defvar company-candidates nil))
+  (unless (fboundp 'company-manual-begin) (defalias 'company-manual-begin #'ignore))
+  (magik-completion-test--with-fake-cb proc
+    (let ((requester (generate-new-buffer " *test-requester*"))
+          (result 'never-called)
+          (began 0)
+          (capf-called 0))
+      (with-current-buffer requester
+        (insert "abc")
+        (setq-local company-mode t)
+        (cl-letf (((symbol-function 'company-manual-begin)
+                   (lambda () (cl-incf began)))
+                  ((symbol-function 'completion-at-point)
+                   (lambda () (cl-incf capf-called))))
+          (should (magik-completion--cb-query-async
+                   "PING\n" (lambda (r) (setq result r))
+                   (lambda (str) (string-match-p "\n" str)) #'string-trim))
+          (should (magik-completion-test--wait-until
+                   (lambda () (not (eq result 'never-called))) proc))
+          (should (= began 1))
+          (should (= capf-called 0))))
+      (kill-buffer requester))))
+
+(ert-deftest magik-completion--cb-query-async--company-nudges-post-command-after-manual-begin ()
+  "Mirrors `company-idle-begin': manual-begin computes candidates but
+doesn't paint them without a following `company-post-command'."
+  (unless (boundp 'company-mode) (defvar company-mode nil))
+  (unless (boundp 'company-candidates) (defvar company-candidates nil))
+  (unless (fboundp 'company-manual-begin) (defalias 'company-manual-begin #'ignore))
+  (unless (fboundp 'company-post-command) (defalias 'company-post-command #'ignore))
+  (magik-completion-test--with-fake-cb proc
+    (let ((requester (generate-new-buffer " *test-requester*"))
+          (result 'never-called)
+          (order nil))
+      (with-current-buffer requester
+        (insert "abc")
+        (setq-local company-mode t)
+        (cl-letf (((symbol-function 'company-manual-begin)
+                   (lambda () (push 'manual-begin order)))
+                  ((symbol-function 'company-post-command)
+                   (lambda () (push (cons 'post-command this-command) order))))
+          (should (magik-completion--cb-query-async
+                   "PING\n" (lambda (r) (setq result r))
+                   (lambda (str) (string-match-p "\n" str)) #'string-trim))
+          (should (magik-completion-test--wait-until
+                   (lambda () (not (eq result 'never-called))) proc))
+          (setq order (nreverse order))
+          (should (equal (car order) 'manual-begin))
+          (should (equal (cdr order) (list (cons 'post-command 'company-idle-begin))))))
+      (kill-buffer requester))))
+
+(ert-deftest magik-completion--cb-query-async--company-skips-refresh-when-point-moved ()
+  "No forced Company refresh if point moved away and no session was open."
+  (unless (boundp 'company-mode) (defvar company-mode nil))
+  (unless (boundp 'company-candidates) (defvar company-candidates nil))
+  (unless (fboundp 'company-manual-begin) (defalias 'company-manual-begin #'ignore))
+  (magik-completion-test--with-fake-cb proc
+    (let ((requester (generate-new-buffer " *test-requester*"))
+          (result 'never-called)
+          (began 0))
+      (with-current-buffer requester
+        (insert "abc")
+        (setq-local company-mode t)
+        (setq-local company-candidates nil)
+        (cl-letf (((symbol-function 'company-manual-begin)
+                   (lambda () (cl-incf began))))
+          (should (magik-completion--cb-query-async
+                   "PING\n" (lambda (r) (setq result r))
+                   (lambda (str) (string-match-p "\n" str)) #'string-trim))
+          (goto-char (point-min))
+          (should (magik-completion-test--wait-until
+                   (lambda () (not (eq result 'never-called))) proc))
+          (should (= began 0))))
+      (kill-buffer requester))))
+
+(ert-deftest magik-completion--cb-query-async--company-refreshes-active-session-regardless-of-point ()
+  "An already-open Company session still refreshes, even if point moved."
+  (unless (boundp 'company-mode) (defvar company-mode nil))
+  (unless (boundp 'company-candidates) (defvar company-candidates nil))
+  (unless (fboundp 'company-manual-begin) (defalias 'company-manual-begin #'ignore))
+  (magik-completion-test--with-fake-cb proc
+    (let ((requester (generate-new-buffer " *test-requester*"))
+          (result 'never-called)
+          (began 0))
+      (with-current-buffer requester
+        (insert "abc")
+        (setq-local company-mode t)
+        (setq-local company-candidates '("dummy"))
+        (cl-letf (((symbol-function 'company-manual-begin)
+                   (lambda () (cl-incf began))))
+          (should (magik-completion--cb-query-async
+                   "PING\n" (lambda (r) (setq result r))
+                   (lambda (str) (string-match-p "\n" str)) #'string-trim))
+          (goto-char (point-min))
+          (should (magik-completion-test--wait-until
+                   (lambda () (not (eq result 'never-called))) proc))
+          (should (= began 1))))
+      (kill-buffer requester))))
+
+(ert-deftest magik-completion--cb-query-async--company-clears-capf-cache-before-refresh ()
+  "The stale `company--capf-cache' is cleared before asking Company again."
+  (unless (boundp 'company-mode) (defvar company-mode nil))
+  (unless (boundp 'company-candidates) (defvar company-candidates nil))
+  (unless (boundp 'company--capf-cache) (defvar company--capf-cache nil))
+  (unless (fboundp 'company-manual-begin) (defalias 'company-manual-begin #'ignore))
+  (magik-completion-test--with-fake-cb proc
+    (let ((requester (generate-new-buffer " *test-requester*"))
+          (result 'never-called)
+          (cache-when-began 'unset))
+      (with-current-buffer requester
+        (insert "abc")
+        (setq-local company-mode t)
+        (setq-local company--capf-cache (list 'stale-buffer 1 2 'stale-data))
+        (cl-letf (((symbol-function 'company-manual-begin)
+                   (lambda () (setq cache-when-began company--capf-cache))))
+          (should (magik-completion--cb-query-async
+                   "PING\n" (lambda (r) (setq result r))
+                   (lambda (str) (string-match-p "\n" str)) #'string-trim))
+          (should (magik-completion-test--wait-until
+                   (lambda () (not (eq result 'never-called))) proc))
+          (should (null cache-when-began))))
+      (kill-buffer requester))))
 
 (ert-deftest magik-completion--cb-cached-fetch--dispatches-once-then-caches ()
   "The first call marks a fetch pending and dispatches it; a call made

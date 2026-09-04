@@ -494,6 +494,7 @@ so code inspecting properties at position 0 (e.g. `magik-package',
     (when-let* ((bounds (magik-completion--character-bounds)))
       (list (car bounds) (cdr bounds) magik-completion--character-names
             :exclusive 'no
+            :company-prefix-length t
             :company-kind (lambda (_) 'character)
             :annotation-function (magik-completion--kind-annotation 'character)))))
 
@@ -747,6 +748,8 @@ Then dispatch the next queued query on this connection, if any."
     (apply 'magik-completion--cb-dispatch (current-buffer) next)))
 
 (declare-function corfu--post-command "corfu")
+(declare-function company-manual-begin "company")
+(declare-function company-post-command "company")
 
 (defun magik-completion--nudge-doc-display ()
   "Redisplay doc for the current candidate without restarting completion.
@@ -756,36 +759,89 @@ No-op unless Corfu popupinfo is the active frontend."
              (fboundp 'corfu--post-command))
     (ignore-errors (corfu--post-command))))
 
-(defun magik-completion--cb-query-async (command callback &optional ready-p parse-fn no-refresh)
+(defun magik-completion--nudge-popup-display ()
+  "Force Corfu to redraw after `completion-at-point' runs from a timer.
+Corfu normally redraws via `post-command-hook', which a timer never triggers."
+  (when (and completion-in-region-mode
+             (bound-and-true-p corfu-mode)
+             (fboundp 'corfu--post-command))
+    (ignore-errors (corfu--post-command))))
+
+(defun magik-completion--refresh-completion (dispatch-point)
+  "Show fresh candidates after an async CB reply.
+Skipped unless a session is already open or point still matches
+DISPATCH-POINT.  Company needs `company-manual-begin'; other
+frontends use `completion-at-point'."
+  (cond
+   ((bound-and-true-p company-mode)
+    (when (and (fboundp 'company-manual-begin)
+               (or (bound-and-true-p company-candidates)
+                   (= (point) dispatch-point)))
+      ;; Clear company-capf's stale cache or it keeps replaying the
+      ;; old "no candidates" answer for this same buffer/point/tick.
+      (when (boundp 'company--capf-cache)
+        (setq company--capf-cache nil))
+      (ignore-errors
+        (company-manual-begin)
+        ;; Mirrors `company-idle-begin': manual-begin alone computes
+        ;; candidates but doesn't paint them.
+        (when (fboundp 'company-post-command)
+          (let ((this-command 'company-idle-begin))
+            (company-post-command))))))
+   ((and (fboundp 'completion-at-point)
+         (or completion-in-region-mode
+             (= (point) dispatch-point)))
+    (ignore-errors (completion-at-point))
+    (magik-completion--nudge-popup-display))))
+
+(defun magik-completion--cb-response (requester dispatch-point no-refresh callback result)
+  "Run CALLBACK with RESULT, then refresh completion in REQUESTER.
+DISPATCH-POINT and NO-REFRESH are as in `magik-completion--cb-query-async'."
+  (funcall callback result)
+  (when (buffer-live-p requester)
+    (with-current-buffer requester
+      (if no-refresh
+          (magik-completion--nudge-doc-display)
+        (magik-completion--refresh-completion dispatch-point)))))
+
+(defvar magik-completion--cb-connect-retry-interval 0.5
+  "Seconds between retries while waiting for a CB connection.")
+
+(defun magik-completion--cb-query-async (command callback &optional ready-p parse-fn no-refresh deadline)
   "Send COMMAND to the CB without blocking.
-Return t if dispatched or queued, nil if no CB is available; CALLBACK
-gets the result later.  Unless NO-REFRESH (for doc-only fetches),
-completion is recomputed to show it.  READY-P/PARSE-FN override the
-default dispatch, see `magik-completion--cb-filter'."
-  (when-let* ((proc (magik-completion--ensure-cb-process))
+Return t if dispatched, queued, or retried; nil once DEADLINE passes
+with still no CB connection (defaults to `magik-completion-cb-timeout'
+from now).  CALLBACK gets the result later.  Unless NO-REFRESH (for
+doc-only fetches), completion is recomputed to show it.  READY-P/
+PARSE-FN override the default dispatch, see `magik-completion--cb-filter'."
+  (let* ((requester (current-buffer))
+         (dispatch-point (point))
+         (deadline (or deadline (+ (float-time) magik-completion-cb-timeout))))
+    (if-let* ((proc (magik-completion--ensure-cb-process))
               (buf (process-buffer proc))
               (_ (buffer-live-p buf)))
-    (let* ((requester (current-buffer))
-           (on-response
-            (lambda (result)
-              (run-at-time
-               0 nil
-               (lambda ()
-                 (funcall callback result)
-                 (when (buffer-live-p requester)
-                   (with-current-buffer requester
-                     (if no-refresh
-                         (magik-completion--nudge-doc-display)
-                       (when (and completion-in-region-mode
-                                  (fboundp 'completion-at-point))
-                         (ignore-errors (completion-at-point)))))))))))
-      (if (eq (buffer-local-value 'magik-completion--cb-candidates buf) 'pending)
-          (with-current-buffer buf
-            (setq magik-completion--cb-queue
-                  (append magik-completion--cb-queue
-                          (list (list command ready-p parse-fn on-response)))))
-        (magik-completion--cb-dispatch buf command ready-p parse-fn on-response)))
-    t))
+        (let ((on-response
+               (lambda (result)
+                 (run-at-time
+                  0 nil
+                  (lambda ()
+                    (magik-completion--cb-response
+                     requester dispatch-point no-refresh callback result))))))
+          (if (eq (buffer-local-value 'magik-completion--cb-candidates buf) 'pending)
+              (with-current-buffer buf
+                (setq magik-completion--cb-queue
+                      (append magik-completion--cb-queue
+                              (list (list command ready-p parse-fn on-response)))))
+            (magik-completion--cb-dispatch buf command ready-p parse-fn on-response))
+          t)
+      (when (< (float-time) deadline)
+        (run-at-time magik-completion--cb-connect-retry-interval nil
+                     (lambda ()
+                       (when (buffer-live-p requester)
+                         (with-current-buffer requester
+                           (magik-completion--cb-query-async
+                            command callback ready-p parse-fn no-refresh deadline)))))
+        t))))
 
 (defun magik-completion--cb-cached-fetch (cache-var loaded-var pending-var command)
   "Return CACHE-VAR's value once LOADED-VAR is set.
@@ -1108,9 +1164,19 @@ Searches backward for the enclosing _method and scans its doc block."
 
 ;;; --- Method bounds detection ---
 
+(defun magik-completion--numeric-token-p (end)
+  "Return non-nil if the identifier-like token ending at END is all digits."
+  (let ((beg (save-excursion
+               (goto-char end)
+               (skip-chars-backward "a-zA-Z0-9_!?")
+               (point))))
+    (and (< beg end)
+         (string-match-p "\\`[0-9]+\\'"
+                          (buffer-substring-no-properties beg end)))))
+
 (defun magik-completion--method-bounds ()
   "Return (BEG . END) for method name after a dot, or nil.
-Detects `object.meth' patterns and returns bounds of `meth'."
+Allows an empty prefix (BEG == END) right after the dot."
   (let ((syntax (syntax-ppss)))
     (when (and (magik-completion--available-p)
                (not (nth 3 syntax))
@@ -1119,13 +1185,13 @@ Detects `object.meth' patterns and returns bounds of `meth'."
             (beg (save-excursion
                    (skip-chars-backward "a-zA-Z0-9_!?")
                    (point))))
-        (when (and (< beg end)
-                   (> beg (point-min))
+        (when (and (> beg (point-min))
                    (eq (char-before beg) ?.)
                    ;; Ensure there's a word/symbol before the dot
                    (let ((pre-dot (char-before (1- beg))))
                      (and pre-dot
-                          (memq (char-syntax pre-dot) '(?w ?_)))))
+                          (memq (char-syntax pre-dot) '(?w ?_))))
+                   (not (magik-completion--numeric-token-p (1- beg))))
           (cons beg end))))))
 
 ;;; --- Yasnippet template candidates ---
@@ -1251,6 +1317,7 @@ Inserts parameters as yasnippet when STATUS is `finished'."
           (when-let* ((methods (magik-completion--query-methods exemplar prefix)))
             (list beg end methods
                   :exclusive 'no
+                  :company-prefix-length t
                   :company-kind (lambda (_) 'method)
                   :annotation-function
                   (lambda (c)
