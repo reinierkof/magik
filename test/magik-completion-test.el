@@ -308,12 +308,21 @@ $
       (should (member "size" slots))
       (should-not (member "other_slot" slots)))))
 
-(ert-deftest magik-completion--scan-slots--falls-back-to-whole-buffer ()
-  "Outside any method the whole buffer is scanned."
+(ert-deftest magik-completion--scan-slots--unresolved-exemplar-returns-nothing ()
+  "When the current exemplar can't be resolved, no slots are offered,
+even when the buffer contains a `def_slotted_exemplar' form and other
+text that merely looks like a slot pair (e.g. a `property_list.new_with'
+call), as in the case that motivated this test."
   (with-temp-buffer
-    (insert "def_slotted_exemplar(:a_thing,\n\t{\n\t\t{:a_slot, _unset}\n\t})\n$\n")
+    (insert "def_slotted_exemplar(:my_test_env,\n\t{\n\t\t{:niet_aap, _unset}\n\t})\n$\n\n"
+            "my_test_env.define_shared_constant(:example,\n"
+            "    property_list.new_with(\n"
+            "\t:example, {:first_mode, :second_mode},\n"
+            "\t:example_2, {:third_mode, :fourth_mode}\n"
+            "    ),\n"
+            "    :private)\n$\n")
     (goto-char (point-max))
-    (should (member "a_slot" (magik-completion--scan-slots)))))
+    (should-not (magik-completion--scan-slots))))
 
 (ert-deftest magik-completion--exemplar-definition-region--not-found ()
   "Unknown or empty exemplar names yield no region."

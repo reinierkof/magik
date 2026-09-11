@@ -356,19 +356,20 @@ EXEMPLAR is nil, empty, or not defined in this buffer."
 (defun magik-completion--scan-slots ()
   "Scan for slot names of the exemplar the method at point belongs to.
 Slots are read from the matching exemplar definition when it can be
-found in the buffer; otherwise the whole buffer is scanned.
-Returns a list of slot name strings."
+found in the buffer; otherwise no slots are returned.  Returns a list
+of slot name strings."
   (let* ((exemplar (when (fboundp 'magik-current-method-name)
                      (cadr (magik-current-method-name))))
          (region (magik-completion--exemplar-definition-region exemplar))
          (slots '()))
-    (save-excursion
-      (goto-char (or (car region) (point-min)))
-      (while (re-search-forward
-              "{\\s-*:\\([a-z_][a-z0-9_!?]*\\)\\s-*," (cdr region) t)
-        (let ((slot (match-string-no-properties 1)))
-          (unless (member slot slots)
-            (push slot slots)))))
+    (when region
+      (save-excursion
+        (goto-char (car region))
+        (while (re-search-forward
+                "{\\s-*:\\([a-z_][a-z0-9_!?]*\\)\\s-*," (cdr region) t)
+          (let ((slot (match-string-no-properties 1)))
+            (unless (member slot slots)
+              (push slot slots))))))
     (nreverse slots)))
 
 ;;; --- Prefix detection ---
